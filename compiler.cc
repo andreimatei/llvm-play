@@ -7,6 +7,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/LegacyPassManager.h"
 
 #include "ast.h"
 #include "parser.h"
@@ -24,6 +25,7 @@ using llvm::Type;
 LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 std::unique_ptr<Module> TheModule;
+std::unique_ptr<llvm::legacy::FunctionPassManager> TheFPM;
 static std::map<std::string, Value*> NamedValues;
 
 Value* NumberExprAST::codegen() {
@@ -145,6 +147,9 @@ Function* FunctionAST::codegen() const {
     // crash
     std::exit(1);
   }
+
+  TheFPM->run(*f);
+
   return f;
 }
 
