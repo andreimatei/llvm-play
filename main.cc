@@ -3,13 +3,26 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Support/TargetSelect.h"
 
 #include "parser.h"
 #include "global.h"
+#include "kaleidoscpe_jit.h"
 
-void InitModuleAndPassManager() {
+void InitLLVM() {
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser();
+
+  TheJIT = std::make_unique<llvm::orc::KaleidoscopeJIT>();
+
+  ResetModule();
+}
+
+void ResetModule() {
   // Open a new module.
   TheModule = std::make_unique<llvm::Module>("my cool jit", TheContext);
+  TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
 
   // Create a new pass manager attached to it.
   TheFPM = std::make_unique<llvm::legacy::FunctionPassManager>(TheModule.get());
@@ -28,7 +41,7 @@ void InitModuleAndPassManager() {
 
 int main() {
   InitParser();
-  InitModuleAndPassManager();
+  InitLLVM();
   
   MainLoop();
 

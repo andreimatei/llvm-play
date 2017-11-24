@@ -11,6 +11,7 @@
 
 #include "ast.h"
 #include "parser.h"
+#include "kaleidoscpe_jit.h"
 
 using std::vector;
 using std::sprintf;
@@ -27,6 +28,7 @@ static IRBuilder<> Builder(TheContext);
 std::unique_ptr<Module> TheModule;
 std::unique_ptr<llvm::legacy::FunctionPassManager> TheFPM;
 static std::map<std::string, Value*> NamedValues;
+std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 
 Value* NumberExprAST::codegen() {
   return llvm::ConstantFP::get(TheContext, llvm::APFloat(val));

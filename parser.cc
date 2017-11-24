@@ -1,3 +1,4 @@
+#include <cassert>
 #include <memory>
 #include <string>
 #include <map>
@@ -6,6 +7,7 @@
 
 #include "lexer.h"
 #include "ast.h"
+#include "global.h"
 
 using std::string;
 using std::unique_ptr;
@@ -243,7 +245,8 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   if (auto e = ParseExpression()) {
     // Make an anonymous proto.
-    auto proto = std::make_unique<PrototypeAST>("", std::vector<std::string>());
+    auto proto = std::make_unique<PrototypeAST>(
+        "__anon_expr", std::vector<std::string>());
     return std::make_unique<FunctionAST>(std::move(proto), std::move(e));
   }
   return nullptr;
@@ -283,6 +286,26 @@ static void HandleTopLevelExpression() {
     if (auto* fnIR = fnAST->codegen()) {
       fprintf(stderr, "Read a top-level expr:");
       fnIR->print(llvm::errs());
+
+      // JIT the module containing the anonymous expression, keeping a handle
+      // so we can free it later.
+      llvm::orc::KaleidoscopeJIT::ModuleHandleT modHandle = TheJIT->addModule(
+          std::move(TheModule));
+
+      llvm::JITSymbol exprSymbol = TheJIT->findSymbol("__anon_expr");
+      assert(exprSymbol && "Function not found");
+
+      // Get the symbol's address and cast it to the right type (takes no
+      // arguments, returns a double) so we can call it as a native function.
+      //double (*fp)() = (double (*)())(intptr_t)exprSymbol.getAddress();
+      double (*fp)() = (double (*)())(intptr_t)(*exprSymbol.getAddress());
+      
+      double res = fp();
+      fprintf(stderr, "Evaluated to: %f\n", res);
+
+      TheJIT->removeModule(modHandle);
+      // Prepare for creating a future module.
+      ResetModule(); 
     }
   } else {
     // Skip token for error recovery.
