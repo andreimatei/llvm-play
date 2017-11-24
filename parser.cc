@@ -2,6 +2,8 @@
 #include <string>
 #include <map>
 
+#include "llvm/Support/raw_ostream.h"
+
 #include "lexer.h"
 #include "ast.h"
 
@@ -9,6 +11,8 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using std::move;
+
+using llvm::Value;
 
 /// CurTok/getNextToken - Provide a simple token buffer.  CurTok is the current
 /// token the parser is looking at.  getNextToken reads another token from the
@@ -25,6 +29,11 @@ unique_ptr<ExprAST> logError(const char* str) {
 }
 
 unique_ptr<PrototypeAST> logErrorP(const char* str) {
+  logError(str);
+  return nullptr;
+}
+
+Value* logErrorV(const char* str) {
   logError(str);
   return nullptr;
 }
@@ -141,7 +150,6 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(
 
 /// expression
 ///   ::= primary binoprhs
-///
 static std::unique_ptr<ExprAST> ParseExpression() {
   auto lhs = ParsePrimary();
   if (!lhs) {
@@ -246,8 +254,11 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 //===----------------------------------------------------------------------===//
 
 static void HandleDefinition() {
-  if (ParseDefinition()) {
-    fprintf(stderr, "Parsed a function definition.\n");
+  if (auto fnAST = ParseDefinition()) {
+    if (auto* fnIR = fnAST->codegen()) {
+      fprintf(stderr, "Read function definition:");
+      fnIR->print(llvm::errs());
+    }
   } else {
     // Skip token for error recovery.
     getNextToken();
@@ -255,8 +266,11 @@ static void HandleDefinition() {
 }
 
 static void HandleExtern() {
-  if (ParseExtern()) {
-    fprintf(stderr, "Parsed an extern\n");
+  if (auto protoAST = ParseExtern()) {
+    if (auto* fnIR = protoAST->codegen()) {
+      fprintf(stderr, "Read extern:");
+      fnIR->print(llvm::errs());
+    }
   } else {
     // Skip token for error recovery.
     getNextToken();
@@ -265,8 +279,11 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpression() {
   // Evaluate a top-level expression into an anonymous function.
-  if (ParseTopLevelExpr()) {
-    fprintf(stderr, "Parsed a top-level expr\n");
+  if (auto fnAST = ParseTopLevelExpr()) {
+    if (auto* fnIR = fnAST->codegen()) {
+      fprintf(stderr, "Read a top-level expr:");
+      fnIR->print(llvm::errs());
+    }
   } else {
     // Skip token for error recovery.
     getNextToken();

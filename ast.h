@@ -6,6 +6,9 @@
 #include <utility>
 #include <vector>
 
+#include "llvm/IR/Value.h"
+#include "llvm/IR/Function.h"
+
 using std::string;
 using std::vector;
 using std::unique_ptr;
@@ -15,12 +18,16 @@ using std::move;
 class ExprAST {
 public:
   virtual ~ExprAST() {}
+  virtual llvm::Value* codegen() = 0;  
+  virtual string print() = 0;
 };
 
 /// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
 public:
   NumberExprAST(double val): val(val){}
+  virtual llvm::Value* codegen();
+  virtual string print();
 
 private:
   double val;
@@ -32,6 +39,8 @@ private:
 
 public:
   VariableExprAST(const std::string& name) : name(name){}
+  virtual llvm::Value* codegen();  
+  virtual string print();
 };
 
 class BinaryExprAST : public ExprAST {
@@ -45,6 +54,8 @@ public:
       std::unique_ptr<ExprAST> lhs, 
       std::unique_ptr<ExprAST> rhs) : 
     op(op), lhs(std::move(lhs)), rhs(std::move(rhs)) {}
+  virtual llvm::Value* codegen();  
+  virtual string print();
 };
 
 // Function calls.
@@ -58,6 +69,8 @@ public:
       std::string callee, 
       std::vector<std::unique_ptr<ExprAST> > args) :
     callee(callee), args(std::move(args)) {}
+  virtual llvm::Value* codegen();  
+  virtual string print();
 };
 
 /// PrototypeAST - This class represents the "prototype" for a function,
@@ -70,8 +83,8 @@ private:
 
 public:
   PrototypeAST(string name, vector<string> args) : name(name), args(std::move(args)) {}
-
   string getName() const { return name; }
+  llvm::Function* codegen() const;
 };
 
 /// FunctionAST - This class represents a function definition itself.
@@ -86,6 +99,7 @@ public:
       unique_ptr<ExprAST> body) : 
     proto(move(proto)), 
     body(move(body)) {};
+  llvm::Function* codegen() const;
 };
 
 #endif
