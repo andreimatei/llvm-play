@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cassert>
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/IRBuilder.h"
@@ -144,11 +145,9 @@ Function* FunctionAST::codegen() const {
     return nullptr;
   }
   Builder.CreateRet(retVal);
+  
   // Validate the generated code, checking for consistency.
-  if (llvm::verifyFunction(*f)) {
-    // crash
-    std::exit(1);
-  }
+  assert(!llvm::verifyFunction(*f));
 
   TheFPM->run(*f);
 

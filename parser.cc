@@ -16,11 +16,11 @@ using std::move;
 
 using llvm::Value;
 
-/// CurTok/getNextToken - Provide a simple token buffer.  CurTok is the current
-/// token the parser is looking at.  getNextToken reads another token from the
-/// lexer and updates CurTok with its results.
-static int CurTok;
-static int getNextToken() {
+// CurTok/getNextToken - Provide a simple token buffer. CurTok is the current
+// token the parser is looking at. getNextToken reads another token from the /
+// lexer and updates CurTok with its results.
+int CurTok;
+int getNextToken() {
   return CurTok = gettok();
 }
 
@@ -206,19 +206,31 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     return logErrorP("Expected function name in prototype");
 
   std::string fnName = IdentifierStr;
-  getNextToken();
+  getNextToken();  // eat the function name
 
-  if (CurTok != '(')
+  if (CurTok != '(') {
     return logErrorP("Expected '(' in prototype");
+  }
 
   // Read the list of argument names.
   std::vector<std::string> argNames;
-  while (getNextToken() == tok_identifier)
+  while (true) {
+    int tok = getNextToken();
+    if (tok != tok_identifier) {
+      break;
+    }
     argNames.push_back(IdentifierStr);
-  if (CurTok != ')')
-    return logErrorP("Expected ')' in prototype");
 
-  // success.
+    tok = getNextToken();
+    if (tok != ',') {
+      break;
+    }
+  }
+
+  if (CurTok != ')') {
+    return logErrorP("Expected ')' in prototype");
+  }
+
   getNextToken();  // eat ')'.
 
   return std::make_unique<PrototypeAST>(fnName, std::move(argNames));
@@ -297,7 +309,6 @@ static void HandleTopLevelExpression() {
 
       // Get the symbol's address and cast it to the right type (takes no
       // arguments, returns a double) so we can call it as a native function.
-      //double (*fp)() = (double (*)())(intptr_t)exprSymbol.getAddress();
       double (*fp)() = (double (*)())(intptr_t)(*exprSymbol.getAddress());
       
       double res = fp();
