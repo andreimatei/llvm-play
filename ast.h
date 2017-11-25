@@ -73,6 +73,22 @@ public:
   virtual string print();
 };
 
+// IfExprAST - Expression class for if/then/else.
+class IfExprAST : public ExprAST {
+private:
+  std::unique_ptr<ExprAST> condExpr, thenExpr, elseExpr;
+
+public:
+  IfExprAST(
+      std::unique_ptr<ExprAST> condExpr,
+      std::unique_ptr<ExprAST> thenExpr,
+      std::unique_ptr<ExprAST> elseExpr) : 
+    condExpr(std::move(condExpr)), thenExpr(std::move(thenExpr)), elseExpr(std::move(elseExpr)) {};
+
+  llvm::Value* codegen() override;
+  string print() override;
+};
+
 // PrototypeAST - This class represents the "prototype" for a function, which
 // captures its name, and its argument names (thus implicitly the number of
 // arguments the function takes).

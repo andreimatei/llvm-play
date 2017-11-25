@@ -25,6 +25,7 @@ using llvm::LLVMContext;
 using llvm::IRBuilder;
 using llvm::Module;
 using llvm::Type;
+using llvm::BasicBlock;
 
 LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
@@ -145,7 +146,7 @@ Function* FunctionAST::codegen() {
   // We just added the function above.
   assert(f && !f->empty());
 
-  llvm::BasicBlock *bb = llvm::BasicBlock::Create(TheContext, "entry", f);
+  BasicBlock *bb = BasicBlock::Create(TheContext, "entry", f);
   Builder.SetInsertPoint(bb);
 
   // Record the function arguments in the NamedValues map.
@@ -171,4 +172,57 @@ Function* FunctionAST::codegen() {
   return f;
 }
 
+Value* IfExprAST::codegen() {
+  Value* condCode = condExpr->codegen();
+  if (!condCode) {
+    return nullptr;
+  }
+  // Convert condition to a bool by comparing non-equal to 0.0.
+  condCode = Builder.CreateFCmpONE(
+      condCode, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "ifcond");
 
+  // Get a reference to the function in which we're generating code. We'll
+  // create new blocks in this function.
+  Function* parentFun = Builder.GetInsertBlock()->getParent();
+
+  // Create blocks for the then and else cases. 
+  // The 'then' block is inserted at the end of the function; the others will
+  // be inserted later.
+  BasicBlock* thenBlock = BasicBlock::Create(TheContext, "then", parentFun);
+  BasicBlock* elseBlock = BasicBlock::Create(TheContext, "if");
+  BasicBlock* mergeBlock = BasicBlock::Create(TheContext, "ifcont");
+  Builder.CreateCondBr(condCode, thenBlock, elseBlock);
+
+  // Emit "then" code into a new block.
+  Builder.SetInsertPoint(thenBlock);
+  Value* thenCode = thenExpr->codegen();
+  if (!thenCode) {
+    return nullptr;
+  }
+  // Unconditional jump after the if/then/else block.
+  Builder.CreateBr(mergeBlock);
+  // Update thenBlock to whatever the current block is after recursively
+  // generating code for the "then" block.
+  thenBlock = Builder.GetInsertBlock();
+
+  // Emit "else" code into a new block.
+  parentFun->getBasicBlockList().push_back(elseBlock);
+  Builder.SetInsertPoint(elseBlock);
+  Value* elseCode = elseExpr->codegen();
+  if (!elseCode) {
+    return nullptr;
+  }
+  // Unconditional jump after the if/then/else block.
+  Builder.CreateBr(mergeBlock);
+  // Update thenBlock to whatever the current block is after recursively
+  // generating code for the "then" block.
+  elseBlock = Builder.GetInsertBlock();
+
+  // Emit the "merge" code.
+  parentFun->getBasicBlockList().push_back(mergeBlock);
+  Builder.SetInsertPoint(mergeBlock);
+  llvm::PHINode* phi = Builder.CreatePHI(Type::getDoubleTy(TheContext), 2, "iftmp");
+  phi->addIncoming(thenCode, thenBlock);
+  phi->addIncoming(elseCode, elseBlock);
+  return phi;
+}

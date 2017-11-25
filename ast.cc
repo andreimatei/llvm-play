@@ -22,3 +22,9 @@ std::string CallExprAST::print() {
   return callee + "(...)";
 }
 
+std::string IfExprAST::print() {
+  std::ostringstream s;
+  s << "if (" <<  condExpr->print() << ") then (" << thenExpr->print() 
+   << ") else (" << elseExpr->print() << ")";
+  return s.str();
+}

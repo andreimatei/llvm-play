@@ -100,10 +100,45 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   return std::make_unique<CallExprAST>(id, std::move(args));
 }
 
+// ifexpr ::= 'if' expression 'then' expression 'else' expression
+static std::unique_ptr<ExprAST> ParseIfExpr() {
+  getNextToken(); // eat the if
+
+  // parse the condition
+  unique_ptr<ExprAST> cond = ParseExpression();
+  if (!cond) {
+    return nullptr;
+  }
+  
+  // parse the then expr
+  if (CurTok != tok_then) {
+    return logError("expected then");
+  }
+  getNextToken();  // eat the then
+  unique_ptr<ExprAST> then = ParseExpression();
+  if (!then) {
+    return nullptr;
+  }
+
+  // parse the else expr
+  if (CurTok != tok_else) {
+    return logError("expected else");
+  }
+  getNextToken();  // eat the else 
+  unique_ptr<ExprAST> elseExpr = ParseExpression();
+  if (!then) {
+    return nullptr;
+  }
+  return std::make_unique<IfExprAST>(
+      std::move(cond), std::move(then), std::move(elseExpr));
+}
+
+
 /// primary
 ///   ::= identifierexpr
 ///   ::= numberexpr
 ///   ::= parenexpr
+///   ::= ifthenelse
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
   default:
@@ -114,6 +149,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseNumberExpr();
   case '(':
     return ParseParenExpr();
+  case tok_if:
+    return ParseIfExpr();
   }
 }
 
@@ -145,14 +182,14 @@ void InitParser() {
   getNextToken();
 }
 
-static std::unique_ptr<ExprAST> ParseBinOpRHS(
+static unique_ptr<ExprAST> ParseBinOpRHS(
   int exprPrec,
   unique_ptr<ExprAST> lhs
 );
 
 /// expression
 ///   ::= primary binoprhs
-static std::unique_ptr<ExprAST> ParseExpression() {
+static unique_ptr<ExprAST> ParseExpression() {
   auto lhs = ParsePrimary();
   if (!lhs) {
     return nullptr;
