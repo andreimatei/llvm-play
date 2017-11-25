@@ -73,9 +73,9 @@ public:
   virtual string print();
 };
 
-/// PrototypeAST - This class represents the "prototype" for a function,
-/// which captures its name, and its argument names (thus implicitly the number
-/// of arguments the function takes).
+// PrototypeAST - This class represents the "prototype" for a function, which
+// captures its name, and its argument names (thus implicitly the number of
+// arguments the function takes).
 class PrototypeAST {
 private:
   string name;
@@ -99,7 +99,10 @@ public:
       unique_ptr<ExprAST> body) : 
     proto(move(proto)), 
     body(move(body)) {};
-  llvm::Function* codegen() const;
+
+  // This codegen is not const because it destroys proto. It can only be called
+  // once.
+  llvm::Function* codegen();
 };
 
 #endif

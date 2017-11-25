@@ -240,10 +240,12 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 static std::unique_ptr<FunctionAST> ParseDefinition() {
   getNextToken();  // eat def.
   auto proto = ParsePrototype();
-  if (!proto) return nullptr;
-
-  if (auto e = ParseExpression())
+  if (!proto) {
+    return nullptr;
+  }
+  if (auto e = ParseExpression()) {
     return std::make_unique<FunctionAST>(std::move(proto), std::move(e));
+  }
   return nullptr;
 }
 
@@ -285,6 +287,9 @@ static void HandleExtern() {
     if (auto* fnIR = protoAST->codegen()) {
       fprintf(stderr, "Read extern:");
       fnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+      // Add the signature to the list of functions.
+      FunctionProtos[protoAST->getName()] = std::move(protoAST);
     }
   } else {
     // Skip token for error recovery.

@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cassert>
+#include <memory>
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/IRBuilder.h"
@@ -16,6 +17,7 @@
 
 using std::vector;
 using std::sprintf;
+using std::string;
 
 using llvm::Function;
 using llvm::Value;
@@ -28,8 +30,26 @@ LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 std::unique_ptr<Module> TheModule;
 std::unique_ptr<llvm::legacy::FunctionPassManager> TheFPM;
-static std::map<std::string, Value*> NamedValues;
+static std::map<string, Value*> NamedValues;
 std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+// Map of function name to the (latest) prototype declared with that name.
+std::map<string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+
+// resolveFunction takes a function name and returns the corresponding Function
+// from the current module (if present) or generates the function from a
+// registered prototype if the function had previously been generated in
+// another module.
+Function* resolveFunction(const string& name) {
+  Function* f = TheModule->getFunction(name);
+  if (f) {
+    return f;
+  }
+  auto it = FunctionProtos.find(name);
+  if (it != FunctionProtos.end()) {
+    return it->second->codegen();
+  }
+  return nullptr;
+}
 
 Value* NumberExprAST::codegen() {
   return llvm::ConstantFP::get(TheContext, llvm::APFloat(val));
@@ -74,7 +94,9 @@ Value* BinaryExprAST::codegen() {
 }
 
 Value* CallExprAST::codegen() {
-  Function* calleeFun = TheModule->getFunction(callee);
+  // Resolve the function, either in the current module or in the list of
+  // functions in all the modules.
+  Function* calleeFun = resolveFunction(callee);
   if (!calleeFun) {
     char msg[1000];
     sprintf(msg, "unknown function referenced: %s", callee.c_str());
@@ -104,6 +126,7 @@ Function* PrototypeAST::codegen() const {
   vector<Type*> paramTypes(args.size(), Type::getDoubleTy(TheContext));
   llvm::FunctionType* ft = llvm::FunctionType::get(
       Type::getDoubleTy(TheContext), paramTypes, false /* isVarArg */);
+  // Insert the function into the module.
   Function* f = Function::Create(ft, Function::ExternalLinkage, name, TheModule.get());
 
   // Set argument names;
@@ -114,19 +137,13 @@ Function* PrototypeAST::codegen() const {
   return f;
 }
 
-Function* FunctionAST::codegen() const {
-  Function* f = TheModule->getFunction(proto->getName());
-  if (!f) {
-    f = proto->codegen();
-  }
-  if (!f) {
-    return nullptr;
-  }
-  if (!f->empty()) {
-    char msg[1000];
-    sprintf(msg, "function %s cannot be redefined", proto->getName().c_str());
-    return (Function*)logErrorV(msg);
-  }
+Function* FunctionAST::codegen() {
+  const PrototypeAST& p = *proto;
+  // Transfer ownership of the prototype to the FunctionProtos map.
+  FunctionProtos[p.getName()] = std::move(proto);
+  Function* f = resolveFunction(p.getName());
+  // We just added the function above.
+  assert(f && !f->empty());
 
   llvm::BasicBlock *bb = llvm::BasicBlock::Create(TheContext, "entry", f);
   Builder.SetInsertPoint(bb);
