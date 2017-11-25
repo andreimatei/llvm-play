@@ -89,6 +89,27 @@ public:
   string print() override;
 };
 
+// ForExprAST - Expression class for for/in.
+class ForExprAST : public ExprAST {
+  std::string varName;
+  // As opposed to the LLVM Kaleidoskope tutorial, step will never be nil. It
+  // will be an expression yielding 1.0 if its missing from the source we're
+  // compiling.
+  std::unique_ptr<ExprAST> start, end, step, body;
+
+public:
+  ForExprAST(const std::string& varName,
+             std::unique_ptr<ExprAST> start,
+             std::unique_ptr<ExprAST> end, 
+             std::unique_ptr<ExprAST> step,
+             std::unique_ptr<ExprAST> body)
+    : varName(varName), start(std::move(start)), end(std::move(end)),
+      step(std::move(step)), body(std::move(body)) {}
+
+  llvm::Value *codegen() override;
+  string print() override;
+};
+
 // PrototypeAST - This class represents the "prototype" for a function, which
 // captures its name, and its argument names (thus implicitly the number of
 // arguments the function takes).

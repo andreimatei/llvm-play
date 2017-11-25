@@ -133,6 +133,60 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
       std::move(cond), std::move(then), std::move(elseExpr));
 }
 
+/// forexpr ::= 'for' identifier '=' expr ',' expr (',' expr)? expression
+static unique_ptr<ExprAST> ParseForExpr() {
+  getNextToken();  // eat the "for"
+
+  if (CurTok != tok_identifier) {
+    return logError("expected identifier after for");
+  }
+
+  std::string varName = IdentifierStr;
+  getNextToken();  // eat identifier.
+
+  if (CurTok != '=') {
+    return logError("expected '=' after for");
+  }
+  getNextToken();  // eat '='.
+
+
+  unique_ptr<ExprAST> start = ParseExpression();
+  if (!start) {
+    return nullptr;
+  }
+  if (CurTok != ',') {
+    return logError("expected ',' after for start value");
+  }
+  getNextToken();
+
+  unique_ptr<ExprAST> end = ParseExpression();
+  if (!end) {
+    return nullptr;
+  }
+
+  // The step value is optional.
+  std::unique_ptr<ExprAST> step;
+  if (CurTok == ',') {
+    getNextToken();
+    step = ParseExpression();
+    if (!step) {
+      return nullptr;
+    }
+  } else {
+    // If a step is not specified, the default is 1.0.
+    step = std::make_unique<NumberExprAST>(1.0);
+  }
+
+  unique_ptr<ExprAST> body = ParseExpression();
+  if (!body) {
+    return nullptr;
+  }
+
+  return std::make_unique<ForExprAST>(
+      varName, std::move(start), std::move(end), std::move(step), std::move(body));
+}
+
+
 
 /// primary
 ///   ::= identifierexpr
@@ -151,6 +205,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseParenExpr();
   case tok_if:
     return ParseIfExpr();
+  case tok_for:
+    return ParseForExpr();
   }
 }
 

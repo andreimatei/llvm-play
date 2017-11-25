@@ -196,9 +196,8 @@ Value* IfExprAST::codegen() {
   // Emit "then" code into a new block.
   Builder.SetInsertPoint(thenBlock);
   Value* thenCode = thenExpr->codegen();
-  if (!thenCode) {
-    return nullptr;
-  }
+  if (!thenCode) return nullptr;
+  
   // Unconditional jump after the if/then/else block.
   Builder.CreateBr(mergeBlock);
   // Update thenBlock to whatever the current block is after recursively
@@ -225,4 +224,66 @@ Value* IfExprAST::codegen() {
   phi->addIncoming(thenCode, thenBlock);
   phi->addIncoming(elseCode, elseBlock);
   return phi;
+}
+
+Value* ForExprAST::codegen() {
+  // Emit the start code first, without the loop variable in scope.
+  Value* startVal = start->codegen();
+  if (!startVal) return nullptr;
+
+  // Make the new basic block for the loop header, inserting after current
+  // block.
+  Function* parentFun = Builder.GetInsertBlock()->getParent();
+  BasicBlock* preheaderBB = Builder.GetInsertBlock(); 
+  BasicBlock* loopBB = BasicBlock::Create(TheContext, "loop", parentFun);
+  // Insert an explicit fall through from the current block to the LoopBB.
+  Builder.CreateBr(loopBB);
+
+  // Start insertion in LoopBB.
+  Builder.SetInsertPoint(loopBB);
+  // Start the PHI node with an entry for Start.
+  llvm::PHINode* loopVarPhi = Builder.CreatePHI(
+      Type::getDoubleTy(TheContext), 2, varName.c_str());
+  loopVarPhi->addIncoming(startVal, preheaderBB);
+
+  // Within the loop, the variable is defined equal to the PHI node. If it
+  // shadows an existing variable, we have to restore it, so save it now.
+  Value* oldValForLoopVar = NamedValues[varName];
+  NamedValues[varName] = loopVarPhi;
+  // Generate code for the body. The generated Value is ignored.
+  if (!body->codegen()) return nullptr;
+
+  // Emit the step value.
+  Value* stepVal = step->codegen();
+  if (!stepVal) return nullptr;
+  // Increment the loop variable by the step value. This will be fed into
+  // loopVarPhi later.
+  Value* nextLoopVar = Builder.CreateFAdd(loopVarPhi, stepVal, "nextvar");
+
+  // Compute and evaluate the end condition.
+  Value* endCond = end->codegen();
+  if (!endCond) return nullptr;
+  // Convert condition to a bool by comparing non-equal to 0.0.
+  endCond = Builder.CreateFCmpONE(
+    endCond, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "loopcond");
+  
+  // Create the "after loop" block and insert it.
+  BasicBlock* loopEndBB = Builder.GetInsertBlock();
+  BasicBlock* afterBB = BasicBlock::Create(TheContext, "afterloop", parentFun);
+  // Insert the conditional branch into the end of LoopEndBB.
+  Builder.CreateCondBr(endCond, loopBB, afterBB);
+  // Any new code will be inserted in AfterBB.
+  Builder.SetInsertPoint(afterBB);
+
+  // Add a new entry to the PHI node for the backedge.
+  loopVarPhi->addIncoming(nextLoopVar, loopEndBB);
+
+  // Restore the unshadowed variable.
+  if (oldValForLoopVar) {
+    NamedValues[varName] = oldValForLoopVar;
+  } else {
+    NamedValues.erase(varName);
+  }
+  // for expr always returns 0.0.
+  return llvm::Constant::getNullValue(Type::getDoubleTy(TheContext)); 
 }

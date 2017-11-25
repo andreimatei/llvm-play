@@ -28,3 +28,11 @@ std::string IfExprAST::print() {
    << ") else (" << elseExpr->print() << ")";
   return s.str();
 }
+
+std::string ForExprAST::print() {
+  std::ostringstream s;
+  s << "for " << varName  << " = (" << start->print() << "), " 
+    << varName << " < (" << end->print() << "), (" << step->print() << ") "
+    << body->print();
+  return s.str();
+}
