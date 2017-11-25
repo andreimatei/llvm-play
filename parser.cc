@@ -312,6 +312,11 @@ static void HandleDefinition() {
     if (auto* fnIR = fnAST->codegen()) {
       fprintf(stderr, "Read function definition:");
       fnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+      // Add a module with this function and create a new module for future
+      // code.
+      TheJIT->addModule(std::move(TheModule));
+      ResetModule();
     }
   } else {
     // Skip token for error recovery.
@@ -345,6 +350,8 @@ static void HandleTopLevelExpression() {
       // so we can free it later.
       llvm::orc::KaleidoscopeJIT::ModuleHandleT modHandle = TheJIT->addModule(
           std::move(TheModule));
+      // Prepare for creating a future module.
+      ResetModule();
 
       llvm::JITSymbol exprSymbol = TheJIT->findSymbol("__anon_expr");
       assert(exprSymbol && "Function not found");
@@ -356,9 +363,8 @@ static void HandleTopLevelExpression() {
       double res = fp();
       fprintf(stderr, "Evaluated to: %f\n", res);
 
+      // Remove the module with the anonymous function.
       TheJIT->removeModule(modHandle);
-      // Prepare for creating a future module.
-      ResetModule(); 
     }
   } else {
     // Skip token for error recovery.
