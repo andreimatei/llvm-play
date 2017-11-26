@@ -7,6 +7,7 @@ double NumVal;             // Filled in if tok_number
 
 /// gettok - Return the next token from standard input.
 int gettok() {
+  // static because a previous call may leave a character not consumed.
   static int lastCh = ' ';
 
   // Skip white space.
@@ -16,6 +17,7 @@ int gettok() {
 
   if (isalpha(lastCh)) {  // identifier: [a-zA-Z][a-zA-Z0-9]*
     IdentifierStr = lastCh;
+
     while (isalnum(lastCh = getchar())) {
       IdentifierStr += lastCh;
     }
@@ -33,9 +35,23 @@ int gettok() {
       return tok_else;
     if (IdentifierStr == "for")
       return tok_for;
+    // !!! did I get rid of "in"?
     if (IdentifierStr == "in")
       return tok_in;
     return tok_identifier;
+  }
+
+  if (lastCh == '{') {
+    lastCh = getchar();
+    return tok_block_open;
+  }
+  if (lastCh == '}') {
+    lastCh = getchar();
+    return tok_block_close;
+  }
+  if (lastCh == ';') {
+    lastCh = getchar();
+    return tok_semi;
   }
 
   if (isdigit(lastCh) || lastCh == '.') { // Number: [0-9.]+

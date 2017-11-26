@@ -21,7 +21,8 @@ using llvm::Value;
 // lexer and updates CurTok with its results.
 int CurTok;
 int getNextToken() {
-  return CurTok = gettok();
+  CurTok = gettok();
+  return CurTok;
 }
 
 /// logError* - These are little helper functions for error handling.
@@ -129,8 +130,9 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
   if (!then) {
     return nullptr;
   }
-  return std::make_unique<IfExprAST>(
+  auto up = std::make_unique<IfExprAST>(
       std::move(cond), std::move(then), std::move(elseExpr));
+  return up;
 }
 
 /// forexpr ::= 'for' identifier '=' expr ',' expr (',' expr)? expression
@@ -186,6 +188,27 @@ static unique_ptr<ExprAST> ParseForExpr() {
       varName, std::move(start), std::move(end), std::move(step), std::move(body));
 }
 
+/// blockexpr ::= '{' (expr ';')* '}'
+static unique_ptr<ExprAST> ParseBlockExpr() {
+  getNextToken();  // eat '{'.
+  std::vector<unique_ptr<ExprAST>> exprs;
+  while (true) {
+    if (CurTok == tok_semi) {
+      getNextToken();  // eat ';'.
+    }
+    if (CurTok == tok_block_close ) {
+      getNextToken();  // eat '}'.
+      break;
+    }
+    std::unique_ptr<ExprAST> expr;
+    expr = ParseExpression();
+    if (!expr) {
+      return nullptr;
+    }
+    exprs.push_back(std::move(expr));
+  }
+  return std::make_unique<BlockExprAST>(std::move(exprs));
+}
 
 
 /// primary
@@ -193,9 +216,11 @@ static unique_ptr<ExprAST> ParseForExpr() {
 ///   ::= numberexpr
 ///   ::= parenexpr
 ///   ::= ifthenelse
+//    ::= blockexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
   default:
+    fprintf(stderr, "unknown token when expecting an expression: %d\n", CurTok);
     return logError("unknown token when expecting an expression");
   case tok_identifier:
     return ParseIdentifierExpr();
@@ -207,6 +232,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseIfExpr();
   case tok_for:
     return ParseForExpr();
+  case tok_block_open:
+    return ParseBlockExpr();
   }
 }
 
@@ -435,7 +462,7 @@ void MainLoop() {
     switch (CurTok) {
     case tok_eof:
       return;
-    case ';': // ignore top-level semicolons.
+    case tok_semi: // ignore top-level semicolons.
       getNextToken();
       break;
     case tok_def:
@@ -450,4 +477,3 @@ void MainLoop() {
     }
   }
 }
-

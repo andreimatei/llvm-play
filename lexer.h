@@ -13,6 +13,9 @@ enum Token {
   // primary
   tok_identifier = -4,
   tok_number = -5,
+  tok_block_open = -11,
+  tok_block_close = -12,
+  tok_semi = -13,
 
   // control
   tok_if = -6,

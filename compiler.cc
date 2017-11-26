@@ -287,3 +287,16 @@ Value* ForExprAST::codegen() {
   // for expr always returns 0.0.
   return llvm::Constant::getNullValue(Type::getDoubleTy(TheContext)); 
 }
+
+Value* BlockExprAST::codegen() {
+  Value* val;
+  for (const std::unique_ptr<ExprAST>& e : body) {
+    val = e->codegen();
+  }
+  // If there are no expressions, we need insert a return value.
+  if (body.empty()) {
+    return llvm::Constant::getNullValue(Type::getDoubleTy(TheContext)); 
+  }
+  // return the last value.
+  return val;
+}

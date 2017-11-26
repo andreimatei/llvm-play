@@ -36,3 +36,12 @@ std::string ForExprAST::print() {
     << body->print();
   return s.str();
 }
+
+std::string BlockExprAST::print() {
+  std::ostringstream s;
+  s << "{\n";
+  for (const std::unique_ptr<ExprAST>& e : body) {
+    s << e->print() << "\n";
+  }
+  s << "}\n";
+}

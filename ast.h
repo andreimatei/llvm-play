@@ -89,7 +89,7 @@ public:
   string print() override;
 };
 
-// ForExprAST - Expression class for for/in.
+// ForExprAST - Expression class for for.
 class ForExprAST : public ExprAST {
   std::string varName;
   // As opposed to the LLVM Kaleidoskope tutorial, step will never be nil. It
@@ -105,6 +105,19 @@ public:
              std::unique_ptr<ExprAST> body)
     : varName(varName), start(std::move(start)), end(std::move(end)),
       step(std::move(step)), body(std::move(body)) {}
+
+  llvm::Value *codegen() override;
+  string print() override;
+};
+
+// BlockExprAST - Expression class for a block (i.e. {...}).
+// A block return the result of the last expression in it.
+class BlockExprAST : public ExprAST {
+  std::vector<std::unique_ptr<ExprAST>> body;
+
+public:
+  BlockExprAST(std::vector<std::unique_ptr<ExprAST>> body)
+    : body(std::move(body)) {}
 
   llvm::Value *codegen() override;
   string print() override;
