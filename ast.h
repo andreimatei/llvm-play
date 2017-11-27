@@ -39,8 +39,8 @@ private:
 
 public:
   VariableExprAST(const std::string& name) : name(name){}
-  virtual llvm::Value* codegen();  
-  virtual string print();
+  llvm::Value* codegen() override;
+  string print() override;
 };
 
 class BinaryExprAST : public ExprAST {
@@ -54,8 +54,8 @@ public:
       std::unique_ptr<ExprAST> lhs, 
       std::unique_ptr<ExprAST> rhs) : 
     op(op), lhs(std::move(lhs)), rhs(std::move(rhs)) {}
-  virtual llvm::Value* codegen();  
-  virtual string print();
+  llvm::Value* codegen() override;
+  string print() override;
 };
 
 // Function calls.
@@ -69,8 +69,8 @@ public:
       std::string callee, 
       std::vector<std::unique_ptr<ExprAST> > args) :
     callee(callee), args(std::move(args)) {}
-  virtual llvm::Value* codegen();  
-  virtual string print();
+  llvm::Value* codegen() override;
+  string print() override;
 };
 
 // IfExprAST - Expression class for if/then/else.
@@ -106,7 +106,7 @@ public:
     : varName(varName), start(std::move(start)), end(std::move(end)),
       step(std::move(step)), body(std::move(body)) {}
 
-  llvm::Value *codegen() override;
+  llvm::Value* codegen() override;
   string print() override;
 };
 
@@ -119,7 +119,18 @@ public:
   BlockExprAST(std::vector<std::unique_ptr<ExprAST>> body)
     : body(std::move(body)) {}
 
-  llvm::Value *codegen() override;
+  llvm::Value* codegen() override;
+  string print() override;
+};
+
+class ReturnExprAST : public ExprAST {
+private:
+  unique_ptr<ExprAST> expr;
+
+public:
+  ReturnExprAST(unique_ptr<ExprAST> expr) : expr(std::move(expr)) {}
+
+  llvm::Value* codegen() override;
   string print() override;
 };
 

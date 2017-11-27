@@ -188,6 +188,15 @@ static unique_ptr<ExprAST> ParseForExpr() {
       varName, std::move(start), std::move(end), std::move(step), std::move(body));
 }
 
+/// returnexpr ::= 'return' expr
+static unique_ptr<ExprAST> ParseReturnExpr() {
+  getNextToken();  // eat the "return"
+  std::unique_ptr<ExprAST> expr;
+  expr = ParseExpression();
+  if (!expr) return nullptr;
+  return std::make_unique<ReturnExprAST>(std::move(expr));
+}
+
 /// blockexpr ::= '{' (expr ';')* '}'
 static unique_ptr<ExprAST> ParseBlockExpr() {
   getNextToken();  // eat '{'.
@@ -202,9 +211,7 @@ static unique_ptr<ExprAST> ParseBlockExpr() {
     }
     std::unique_ptr<ExprAST> expr;
     expr = ParseExpression();
-    if (!expr) {
-      return nullptr;
-    }
+    if (!expr) return nullptr;
     exprs.push_back(std::move(expr));
   }
   return std::make_unique<BlockExprAST>(std::move(exprs));
@@ -216,7 +223,9 @@ static unique_ptr<ExprAST> ParseBlockExpr() {
 ///   ::= numberexpr
 ///   ::= parenexpr
 ///   ::= ifthenelse
+//    ::= forexpr
 //    ::= blockexpr
+//    ::= returnexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
   default:
@@ -234,6 +243,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseForExpr();
   case tok_block_open:
     return ParseBlockExpr();
+  case tok_return:
+    return ParseReturnExpr();
   }
 }
 

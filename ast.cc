@@ -44,4 +44,11 @@ std::string BlockExprAST::print() {
     s << e->print() << "\n";
   }
   s << "}\n";
+  return s.str();
+}
+
+std::string ReturnExprAST::print() {
+  std::ostringstream s;
+  s << "return " << expr->print();
+  return s.str();
 }

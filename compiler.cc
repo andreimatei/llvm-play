@@ -162,7 +162,27 @@ Function* FunctionAST::codegen() {
     f->eraseFromParent();
     return nullptr;
   }
-  Builder.CreateRet(retVal);
+
+  if (p.getName() != "magic") {
+    Builder.CreateRet(retVal);
+  } else {
+    Function* parentFun = Builder.GetInsertBlock()->getParent();
+    BasicBlock* b2 = BasicBlock::Create(TheContext, "b2", parentFun);
+    BasicBlock* b3 = BasicBlock::Create(TheContext, "b3", parentFun);
+
+    Value* arg0 = NamedValues[f->args().begin()->getName()];
+    auto condCode = Builder.CreateFCmpONE(
+        arg0, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "ifcond");
+    Builder.CreateCondBr(condCode, b2, b3);
+
+    Builder.SetInsertPoint(b2);
+    auto bogusRet = llvm::ConstantFP::get(TheContext, llvm::APFloat(1.0));
+    Builder.CreateRet(bogusRet);
+
+    Builder.SetInsertPoint(b3);
+    bogusRet = llvm::ConstantFP::get(TheContext, llvm::APFloat(2.0));
+    Builder.CreateRet(bogusRet);
+  }
   
   // Validate the generated code, checking for consistency.
   assert(!llvm::verifyFunction(*f));
@@ -224,6 +244,13 @@ Value* IfExprAST::codegen() {
   phi->addIncoming(thenCode, thenBlock);
   phi->addIncoming(elseCode, elseBlock);
   return phi;
+}
+
+Value* ReturnExprAST::codegen() {
+  Value* retVal = expr->codegen();
+  Builder.CreateRet(retVal);
+  // The return expression itself return 0.0.
+  return llvm::Constant::getNullValue(Type::getDoubleTy(TheContext)); 
 }
 
 Value* ForExprAST::codegen() {

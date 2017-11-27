@@ -4,6 +4,7 @@
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/IR/Verifier.h"
 
 #include "parser.h"
 #include "global.h"
@@ -35,6 +36,8 @@ void ResetModule() {
   TheFPM->add(llvm::createGVNPass());
   // Simplify the control flow graph (deleting unreachable blocks, etc).
   TheFPM->add(llvm::createCFGSimplificationPass());
+  // !!!
+  TheFPM->add(llvm::createVerifierPass(true /* fatalErrors */));
 
   TheFPM->doInitialization();
 }
