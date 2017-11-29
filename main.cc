@@ -28,6 +28,8 @@ void ResetModule() {
   // Create a new pass manager attached to it.
   TheFPM = std::make_unique<llvm::legacy::FunctionPassManager>(TheModule.get());
 
+  // Promote allocas to registers.
+  TheFPM->add(llvm::createPromoteMemoryToRegisterPass());
   // Do simple "peephole" optimizations and bit-twiddling optzns.
   TheFPM->add(llvm::createInstructionCombiningPass());
   // Reassociate expressions.

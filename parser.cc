@@ -217,6 +217,25 @@ static unique_ptr<ExprAST> ParseBlockExpr() {
   return std::make_unique<BlockExprAST>(std::move(exprs));
 }
 
+/// ::= 'var' <identifier> ('=' expression)?
+static std::unique_ptr<ExprAST> ParseVariableDeclExpr() {
+  getNextToken();  // eat the var.
+  string name;
+  // Initial value. Stays null if not specified.
+  unique_ptr<ExprAST> val;
+  
+  if (CurTok != tok_identifier) {
+    return logError("expected identifier after var");
+  }
+  name = IdentifierStr;
+  if (CurTok == '=') {
+    val = ParseExpression();
+    if (!val) {
+      return nullptr;
+    }
+  }
+  return std::make_unique<VariableDeclAST>(name, std::move(val));
+}
 
 /// primary
 ///   ::= identifierexpr
@@ -225,6 +244,7 @@ static unique_ptr<ExprAST> ParseBlockExpr() {
 ///   ::= ifthenelse
 //    ::= forexpr
 //    ::= blockexpr
+//    ::= VariableDeclExpr
 //    ::= returnexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
@@ -243,6 +263,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseForExpr();
   case tok_block_open:
     return ParseBlockExpr();
+  case tok_var:
+    return ParseVariableDeclExpr();
   case tok_return:
     return ParseReturnExpr();
   }
@@ -266,6 +288,7 @@ int GetTokPrecedence() {
 void InitParser() {
   // Install standard binary operators.
   // 1 is lowest precedence.
+  BinopPrecedence['='] = 2;
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;

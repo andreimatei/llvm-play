@@ -33,12 +33,29 @@ private:
   double val;
 };
 
+// Variable references.
 class VariableExprAST : public ExprAST {
 private:
   std::string name;
 
 public:
   VariableExprAST(const std::string& name) : name(name){}
+  llvm::Value* codegen() override;
+  string print() override;
+  string getName() const { return name; }
+};
+
+// Variable declarations.
+class VariableDeclAST : public ExprAST {
+private:
+  std::string name;
+  // Initial value. Null if the variable is to be zero-initialized.
+  std::unique_ptr<ExprAST> val;
+
+public:
+  VariableDeclAST(const std::string& name, std::unique_ptr<ExprAST> val) : 
+    name(name), val(std::move(val)) {}
+
   llvm::Value* codegen() override;
   string print() override;
 };

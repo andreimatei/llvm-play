@@ -37,6 +37,8 @@ int gettok() {
       return tok_for;
     if (IdentifierStr == "return")
       return tok_return;
+    if (IdentifierStr == "var")
+      return tok_var;
     // !!! did I get rid of "in"?
     if (IdentifierStr == "in")
       return tok_in;
@@ -76,7 +78,7 @@ int gettok() {
     }
   }
   
-  // Check for end of file.  Don't eat the EOF.
+  // Check for end of file. Don't eat the EOF.
   if (lastCh == EOF) {
     return tok_eof;
   }
