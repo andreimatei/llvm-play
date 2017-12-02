@@ -14,19 +14,29 @@ using std::vector;
 using std::unique_ptr;
 using std::move;
 
-/// ExprAST - Base class for all expression nodes.
-class ExprAST {
+class StatementAST {
 public:
-  virtual ~ExprAST() {}
-  virtual llvm::Value* codegen() = 0;  
+  virtual ~StatementAST() {}
+  // Returns true on success, false on error.
+  virtual bool codegen() = 0;  
   virtual string print() = 0;
 };
+
+/// ExprAST - Base class for all expression nodes.
+class ExprAST : public StatementAST{
+public:
+  virtual ~ExprAST() {}
+  // codegenExpr is like codegen, except it return a value.
+  virtual llvm::Value* codegenExpr() = 0;  
+  virtual bool codegen() override;
+};
+
 
 /// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
 public:
   NumberExprAST(double val): val(val){}
-  virtual llvm::Value* codegen();
+  virtual llvm::Value* codegenExpr();
   virtual string print();
 
 private:
@@ -40,13 +50,13 @@ private:
 
 public:
   VariableExprAST(const std::string& name) : name(name){}
-  llvm::Value* codegen() override;
+  llvm::Value* codegenExpr() override;
   string print() override;
   string getName() const { return name; }
 };
 
 // Variable declarations.
-class VariableDeclAST : public ExprAST {
+class VariableDeclAST : public StatementAST {
 private:
   std::string name;
   // Initial value. Null if the variable is to be zero-initialized.
@@ -56,7 +66,7 @@ public:
   VariableDeclAST(const std::string& name, std::unique_ptr<ExprAST> val) : 
     name(name), val(std::move(val)) {}
 
-  llvm::Value* codegen() override;
+  bool codegen() override;
   string print() override;
 };
 
@@ -71,7 +81,7 @@ public:
       std::unique_ptr<ExprAST> lhs, 
       std::unique_ptr<ExprAST> rhs) : 
     op(op), lhs(std::move(lhs)), rhs(std::move(rhs)) {}
-  llvm::Value* codegen() override;
+  llvm::Value* codegenExpr() override;
   string print() override;
 };
 
@@ -86,68 +96,69 @@ public:
       std::string callee, 
       std::vector<std::unique_ptr<ExprAST> > args) :
     callee(callee), args(std::move(args)) {}
-  llvm::Value* codegen() override;
+  llvm::Value* codegenExpr() override;
   string print() override;
 };
 
-// IfExprAST - Expression class for if/then/else.
-class IfExprAST : public ExprAST {
+// IfStmtAST - if/then/else.
+class IfStmtAST : public StatementAST {
 private:
-  std::unique_ptr<ExprAST> condExpr, thenExpr, elseExpr;
+  std::unique_ptr<ExprAST> condExpr;
+  std::unique_ptr<StatementAST> thenStmt, elseStmt;
 
 public:
-  IfExprAST(
+  IfStmtAST(
       std::unique_ptr<ExprAST> condExpr,
-      std::unique_ptr<ExprAST> thenExpr,
-      std::unique_ptr<ExprAST> elseExpr) : 
-    condExpr(std::move(condExpr)), thenExpr(std::move(thenExpr)), elseExpr(std::move(elseExpr)) {};
+      std::unique_ptr<StatementAST> thenStmt,
+      std::unique_ptr<StatementAST> elseStmt) : 
+    condExpr(std::move(condExpr)), thenStmt(std::move(thenStmt)), elseStmt(std::move(elseStmt)) {};
 
-  llvm::Value* codegen() override;
+  bool codegen() override;
   string print() override;
 };
 
-// ForExprAST - Expression class for for.
-class ForExprAST : public ExprAST {
+// ForExprAST - for loop.
+class ForStmtAST : public StatementAST {
   std::string varName;
   // As opposed to the LLVM Kaleidoskope tutorial, step will never be nil. It
   // will be an expression yielding 1.0 if its missing from the source we're
   // compiling.
-  std::unique_ptr<ExprAST> start, end, step, body;
+  std::unique_ptr<ExprAST> start, end, step;
+  std::unique_ptr<StatementAST> body;
 
 public:
-  ForExprAST(const std::string& varName,
+  ForStmtAST(const std::string& varName,
              std::unique_ptr<ExprAST> start,
              std::unique_ptr<ExprAST> end, 
              std::unique_ptr<ExprAST> step,
-             std::unique_ptr<ExprAST> body)
+             std::unique_ptr<StatementAST> body)
     : varName(varName), start(std::move(start)), end(std::move(end)),
       step(std::move(step)), body(std::move(body)) {}
 
-  llvm::Value* codegen() override;
+  bool codegen() override;
   string print() override;
 };
 
-// BlockExprAST - Expression class for a block (i.e. {...}).
-// A block return the result of the last expression in it.
-class BlockExprAST : public ExprAST {
-  std::vector<std::unique_ptr<ExprAST>> body;
+// BlockStmtAST - a block (i.e. {...}).
+class BlockStmtAST : public StatementAST {
+  std::vector<std::unique_ptr<StatementAST>> body;
 
 public:
-  BlockExprAST(std::vector<std::unique_ptr<ExprAST>> body)
+  BlockStmtAST(std::vector<std::unique_ptr<StatementAST>> body)
     : body(std::move(body)) {}
 
-  llvm::Value* codegen() override;
+  bool codegen() override;
   string print() override;
 };
 
-class ReturnExprAST : public ExprAST {
+class ReturnStmtAST : public StatementAST {
 private:
   unique_ptr<ExprAST> expr;
 
 public:
-  ReturnExprAST(unique_ptr<ExprAST> expr) : expr(std::move(expr)) {}
+  ReturnStmtAST(unique_ptr<ExprAST> expr) : expr(std::move(expr)) {}
 
-  llvm::Value* codegen() override;
+  bool codegen() override;
   string print() override;
 };
 
@@ -169,12 +180,12 @@ public:
 class FunctionAST {
 private:
   unique_ptr<PrototypeAST> proto;
-  unique_ptr<ExprAST> body;
+  unique_ptr<StatementAST> body;
 
 public:
   FunctionAST(
       unique_ptr<PrototypeAST> proto, 
-      unique_ptr<ExprAST> body) : 
+      unique_ptr<StatementAST> body) : 
     proto(move(proto)), 
     body(move(body)) {};
 

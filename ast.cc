@@ -14,6 +14,16 @@ std::string VariableExprAST::print() {
   return name;
 }
 
+std::string VariableDeclAST::print() {
+  std::ostringstream s;
+  s << "var " <<  name;
+  if (val != nullptr) {
+    s << " = " << val->print();
+  }
+  s << ";";
+  return s.str();
+}
+
 std::string BinaryExprAST::print() {
   return "(" + lhs->print() + op + rhs->print() + ")";
 }
@@ -22,14 +32,14 @@ std::string CallExprAST::print() {
   return callee + "(...)";
 }
 
-std::string IfExprAST::print() {
+std::string IfStmtAST::print() {
   std::ostringstream s;
-  s << "if (" <<  condExpr->print() << ") then (" << thenExpr->print() 
-   << ") else (" << elseExpr->print() << ")";
+  s << "if (" <<  condExpr->print() << ") then (" << thenStmt->print() 
+   << ") else (" << elseStmt->print() << ")";
   return s.str();
 }
 
-std::string ForExprAST::print() {
+std::string ForStmtAST::print() {
   std::ostringstream s;
   s << "for " << varName  << " = (" << start->print() << "), " 
     << varName << " < (" << end->print() << "), (" << step->print() << ") "
@@ -37,17 +47,17 @@ std::string ForExprAST::print() {
   return s.str();
 }
 
-std::string BlockExprAST::print() {
+std::string BlockStmtAST::print() {
   std::ostringstream s;
   s << "{\n";
-  for (const std::unique_ptr<ExprAST>& e : body) {
+  for (const std::unique_ptr<StatementAST>& e : body) {
     s << e->print() << "\n";
   }
   s << "}\n";
   return s.str();
 }
 
-std::string ReturnExprAST::print() {
+std::string ReturnStmtAST::print() {
   std::ostringstream s;
   s << "return " << expr->print();
   return s.str();

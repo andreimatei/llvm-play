@@ -49,6 +49,7 @@ static std::unique_ptr<ExprAST> ParseNumberExpr() {
 }
 
 static std::unique_ptr<ExprAST> ParseExpression();
+static std::unique_ptr<StatementAST> ParseStmt();
 
 /// parenexpr ::= '(' expression ')'
 static std::unique_ptr<ExprAST> ParseParenExpr() {
@@ -101,8 +102,8 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   return std::make_unique<CallExprAST>(id, std::move(args));
 }
 
-// ifexpr ::= 'if' expression 'then' expression 'else' expression
-static std::unique_ptr<ExprAST> ParseIfExpr() {
+// ifstmt ::= 'if' expression 'then' stmt 'else' stmt
+static std::unique_ptr<StatementAST> ParseIfStmt() {
   getNextToken(); // eat the if
 
   // parse the condition
@@ -111,32 +112,32 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     return nullptr;
   }
   
-  // parse the then expr
+  // parse the then stmt
   if (CurTok != tok_then) {
     return logError("expected then");
   }
   getNextToken();  // eat the then
-  unique_ptr<ExprAST> then = ParseExpression();
+  unique_ptr<StatementAST> then = ParseStmt();
   if (!then) {
     return nullptr;
   }
 
-  // parse the else expr
+  // parse the else stmt
   if (CurTok != tok_else) {
     return logError("expected else");
   }
   getNextToken();  // eat the else 
-  unique_ptr<ExprAST> elseExpr = ParseExpression();
+  unique_ptr<StatementAST> elseStmt = ParseStmt();
   if (!then) {
     return nullptr;
   }
-  auto up = std::make_unique<IfExprAST>(
-      std::move(cond), std::move(then), std::move(elseExpr));
+  auto up = std::make_unique<IfStmtAST>(
+      std::move(cond), std::move(then), std::move(elseStmt));
   return up;
 }
 
-/// forexpr ::= 'for' identifier '=' expr ',' expr (',' expr)? expression
-static unique_ptr<ExprAST> ParseForExpr() {
+/// forstmt ::= 'for' identifier '=' expr ',' expr (',' expr)? stmt
+static unique_ptr<StatementAST> ParseForStmt() {
   getNextToken();  // eat the "for"
 
   if (CurTok != tok_identifier) {
@@ -171,36 +172,32 @@ static unique_ptr<ExprAST> ParseForExpr() {
   if (CurTok == ',') {
     getNextToken();
     step = ParseExpression();
-    if (!step) {
-      return nullptr;
-    }
+    if (!step) return nullptr;
   } else {
     // If a step is not specified, the default is 1.0.
     step = std::make_unique<NumberExprAST>(1.0);
   }
 
-  unique_ptr<ExprAST> body = ParseExpression();
-  if (!body) {
-    return nullptr;
-  }
+  unique_ptr<StatementAST> body = ParseStmt();
+  if (!body) return nullptr; 
 
-  return std::make_unique<ForExprAST>(
+  return std::make_unique<ForStmtAST>(
       varName, std::move(start), std::move(end), std::move(step), std::move(body));
 }
 
-/// returnexpr ::= 'return' expr
-static unique_ptr<ExprAST> ParseReturnExpr() {
+/// returnStmt ::= 'return' expr
+static unique_ptr<StatementAST> ParseReturnStmt() {
   getNextToken();  // eat the "return"
   std::unique_ptr<ExprAST> expr;
   expr = ParseExpression();
   if (!expr) return nullptr;
-  return std::make_unique<ReturnExprAST>(std::move(expr));
+  return std::make_unique<ReturnStmtAST>(std::move(expr));
 }
 
-/// blockexpr ::= '{' (expr ';')* '}'
-static unique_ptr<ExprAST> ParseBlockExpr() {
+/// blockStmt ::= '{' (expr ';')* '}'
+static unique_ptr<StatementAST> ParseBlockStmt() {
   getNextToken();  // eat '{'.
-  std::vector<unique_ptr<ExprAST>> exprs;
+  std::vector<unique_ptr<StatementAST>> stmts;
   while (true) {
     if (CurTok == tok_semi) {
       getNextToken();  // eat ';'.
@@ -209,16 +206,16 @@ static unique_ptr<ExprAST> ParseBlockExpr() {
       getNextToken();  // eat '}'.
       break;
     }
-    std::unique_ptr<ExprAST> expr;
-    expr = ParseExpression();
-    if (!expr) return nullptr;
-    exprs.push_back(std::move(expr));
+    std::unique_ptr<StatementAST> stmt;
+    stmt = ParseStmt();
+    if (!stmt) return nullptr;
+    stmts.push_back(std::move(stmt));
   }
-  return std::make_unique<BlockExprAST>(std::move(exprs));
+  return std::make_unique<BlockStmtAST>(std::move(stmts));
 }
 
 /// ::= 'var' <identifier> ('=' expression)?
-static std::unique_ptr<ExprAST> ParseVariableDeclExpr() {
+static std::unique_ptr<StatementAST> ParseVariableDeclStmt() {
   getNextToken();  // eat the var.
   string name;
   // Initial value. Stays null if not specified.
@@ -257,16 +254,30 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseNumberExpr();
   case '(':
     return ParseParenExpr();
+  }
+}
+
+static std::unique_ptr<StatementAST> ParseStmt() {
+  switch (CurTok) {
+  default:
+    fprintf(stderr, "unknown token when expecting an expression: %d\n", CurTok);
+    return logError("unknown token when expecting an expression");
+  case tok_identifier:
+    return ParseExpression();
+  case tok_number:
+    return ParseExpression();
+  case '(':
+    return ParseExpression();
   case tok_if:
-    return ParseIfExpr();
+    return ParseIfStmt();
   case tok_for:
-    return ParseForExpr();
+    return ParseForStmt();
   case tok_block_open:
-    return ParseBlockExpr();
+    return ParseBlockStmt();
   case tok_var:
-    return ParseVariableDeclExpr();
+    return ParseVariableDeclStmt();
   case tok_return:
-    return ParseReturnExpr();
+    return ParseReturnStmt();
   }
 }
 
@@ -308,9 +319,7 @@ static unique_ptr<ExprAST> ParseBinOpRHS(
 ///   ::= primary binoprhs
 static unique_ptr<ExprAST> ParseExpression() {
   auto lhs = ParsePrimary();
-  if (!lhs) {
-    return nullptr;
-  }
+  if (!lhs) return nullptr;
   return ParseBinOpRHS(0 /* exprPrec */, std::move(lhs));
 }
 
@@ -387,6 +396,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
   getNextToken();  // eat ')'.
 
+  fprintf(stderr, "!!! ParsePrototypes - args: %lu\n", argNames.size());
   return std::make_unique<PrototypeAST>(fnName, std::move(argNames));
 }
 
@@ -397,7 +407,7 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
   if (!proto) {
     return nullptr;
   }
-  if (auto e = ParseExpression()) {
+  if (auto e = ParseStmt()) {
     return std::make_unique<FunctionAST>(std::move(proto), std::move(e));
   }
   return nullptr;
@@ -412,10 +422,12 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 /// toplevelexpr ::= expression
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   if (auto e = ParseExpression()) {
-    // Make an anonymous proto.
+    // Make an anonymous prototype.
     auto proto = std::make_unique<PrototypeAST>(
         "__anon_expr", std::vector<std::string>());
-    return std::make_unique<FunctionAST>(std::move(proto), std::move(e));
+    // Generate a return statement.
+    auto ret = std::make_unique<ReturnStmtAST>(std::move(e));
+    return std::make_unique<FunctionAST>(std::move(proto), std::move(ret));
   }
   return nullptr;
 }
@@ -458,7 +470,9 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpression() {
   // Evaluate a top-level expression into an anonymous function.
+  fprintf(stderr, "!!! HandleTopLevelExpressio 1\n");
   if (auto fnAST = ParseTopLevelExpr()) {
+    fprintf(stderr, "!!! HandleTopLevelExpressio 2\n");
     if (auto* fnIR = fnAST->codegen()) {
       fprintf(stderr, "Read a top-level expr:");
       fnIR->print(llvm::errs());
