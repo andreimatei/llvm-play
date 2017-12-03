@@ -225,7 +225,11 @@ static std::unique_ptr<StatementAST> ParseVariableDeclStmt() {
     return logError("expected identifier after var");
   }
   name = IdentifierStr;
+
+  getNextToken();  // eat the identifier.
+
   if (CurTok == '=') {
+    getNextToken();  // eat the '='.
     val = ParseExpression();
     if (!val) {
       return nullptr;
