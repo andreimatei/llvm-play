@@ -18,6 +18,7 @@
 using std::vector;
 using std::sprintf;
 using std::string;
+using std::pair;
 
 using llvm::Function;
 using llvm::Value;
@@ -39,9 +40,9 @@ std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 // Map of function name to the (latest) prototype declared with that name.
 std::map<string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 
-bool ExprAST::codegen() {
+CodegenRes ExprAST::codegen() {
   auto* val = codegenExpr();
-  return val != nullptr;
+  return CodegenRes(val != nullptr, false);
 }
 
 // resolveFunction takes a function name and returns the corresponding Function
@@ -189,7 +190,7 @@ Function* FunctionAST::codegen() {
   Function* f = resolveFunction(p.getName());
   fprintf(stderr, "!!! FunctionAST::codegen 2.\n");
   // We just added the function above.
-  assert(f && !f->empty());
+  assert(f);
 
   BasicBlock *bb = BasicBlock::Create(TheContext, "entry", f);
   Builder.SetInsertPoint(bb);
@@ -209,9 +210,9 @@ Function* FunctionAST::codegen() {
   }
   fprintf(stderr, "!!! FunctionAST::codegen 5\n");
 
-  bool success = body->codegen();
+  auto bodyRes = body->codegen();
   fprintf(stderr, "!!! FunctionAST::codegen 6\n");
-  if (!success) {
+  if (!bodyRes.success) {
     // In case of error in the body, we erase the function so it can be defined
     // again.
     f->eraseFromParent();
@@ -222,6 +223,10 @@ Function* FunctionAST::codegen() {
   fprintf(stderr, "!!! FunctionAST::codegen 77 t: %d \n", xxx);
 
   if (p.getName() != "magic") {
+    BasicBlock* lastBlock = Builder.GetInsertBlock();
+    if (lastBlock->empty()) {
+      Builder.CreateRet(llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)));
+    }
     // !!! now the return value is in the generated code, but I should assert that.
     // Builder.CreateRet(retVal);
   } else {
@@ -246,10 +251,12 @@ Function* FunctionAST::codegen() {
   
   // Validate the generated code, checking for consistency.
   fprintf(stderr, "!!! FunctionAST::codegen 9\n");
-  assert(!llvm::verifyFunction(*f));
-  fprintf(stderr, "!!! FunctionAST::codegen 10\n");
   // !!!
   f->print(llvm::errs());
+
+  fprintf(stderr, "!!! FunctionAST::codegen about to verify\n");
+  assert(!llvm::verifyFunction(*f, &llvm::errs()));
+  fprintf(stderr, "!!! FunctionAST::codegen 10\n");
 
   TheFPM->run(*f);
   fprintf(stderr, "!!! FunctionAST::codegen 11\n");
@@ -257,9 +264,9 @@ Function* FunctionAST::codegen() {
   return f;
 }
 
-bool IfStmtAST::codegen() {
+CodegenRes IfStmtAST::codegen() {
   Value* condCode = condExpr->codegenExpr();
-  if (!condCode) return false; 
+  if (!condCode) return CodegenRes(false, false); 
   // Convert condition to a bool by comparing non-equal to 0.0.
   condCode = Builder.CreateFCmpONE(
       condCode, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "ifcond");
@@ -278,36 +285,34 @@ bool IfStmtAST::codegen() {
 
   // Emit "then" code into a new block.
   Builder.SetInsertPoint(thenBlock);
-  if (!thenStmt->codegen()) return false;
-  
-  // Unconditional jump after the if/then/else block.
-  Builder.CreateBr(mergeBlock);
-  // Update thenBlock to whatever the current block is after recursively
-  // generating code for the "then" block.
-  thenBlock = Builder.GetInsertBlock();
+  auto thenRes = thenStmt->codegen();
+  if (!thenRes.success) return thenRes;
+  if (!thenRes.ret) {  
+    // Unconditional jump after the if/then/else block.
+    Builder.CreateBr(mergeBlock);
+  }
 
   // Emit "else" code into a new block.
   parentFun->getBasicBlockList().push_back(elseBlock);
   Builder.SetInsertPoint(elseBlock);
-  if (!elseStmt->codegen()) return false;
+  auto elseRes = elseStmt->codegen();
+  if (!elseRes.success) return elseRes;
+  if (!elseRes.ret) {
+    // Unconditional jump after the if/then/else block.
+    Builder.CreateBr(mergeBlock);
+  }
   
-  // Unconditional jump after the if/then/else block.
-  Builder.CreateBr(mergeBlock);
-  // Update thenBlock to whatever the current block is after recursively
-  // generating code for the "then" block.
-  elseBlock = Builder.GetInsertBlock();
-
   // Emit the "merge" code.
   parentFun->getBasicBlockList().push_back(mergeBlock);
   Builder.SetInsertPoint(mergeBlock);
-  return true;
+  return CodegenRes(true, false);
 }
 
-bool ReturnStmtAST::codegen() {
+CodegenRes ReturnStmtAST::codegen() {
   Value* retVal = expr->codegenExpr();
-  if (retVal == nullptr) return false;
+  if (retVal == nullptr) return CodegenRes(false, false);
   Builder.CreateRet(retVal);
-  return true;
+  return CodegenRes(true, true);
 }
 
 // Output for-loop as:
@@ -325,13 +330,13 @@ bool ReturnStmtAST::codegen() {
 //   store nextvar -> var
 //   br endcond, loop, afterloop
 // afterloop:
-bool ForStmtAST::codegen() {
+CodegenRes ForStmtAST::codegen() {
   Function* fun = Builder.GetInsertBlock()->getParent();
   llvm::AllocaInst* alloca = createEntryBlockAlloca(fun, varName);
 
   // Emit the start code first, without the loop variable in scope.
   Value* startVal = start->codegenExpr();
-  if (!startVal) return false;
+  if (!startVal) return CodegenRes(false, false);
 
   Builder.CreateStore(startVal, alloca);
 
@@ -351,28 +356,34 @@ bool ForStmtAST::codegen() {
   llvm::AllocaInst* oldValForLoopVar = NamedValues[varName];
   NamedValues[varName] = alloca;
   // Generate code for the body. The generated Value is ignored.
-  if (!body->codegen()) return false;
+  CodegenRes bodyRes = body->codegen();
+  if (!bodyRes.success) return bodyRes;
 
-  // Emit the step value.
-  Value* stepVal = step->codegenExpr();
-  if (!stepVal) return false;
-  // Reload, increment, and restore the alloca. This handles the case where the
-  // body of the loop mutates the variable.
-  Value* curLoopVarVal = Builder.CreateLoad(alloca);
-  Value* nextLoopVar = Builder.CreateFAdd(curLoopVarVal, stepVal, "nextvar");
-  Builder.CreateStore(nextLoopVar, alloca);
+  Value* endCond = nullptr;
+  if (!bodyRes.ret) {
+    // Emit the step value.
+    Value* stepVal = step->codegenExpr();
+    if (!stepVal) return CodegenRes(false, false);
+    // Reload, increment, and restore the alloca. This handles the case where the
+    // body of the loop mutates the variable.
+    Value* curLoopVarVal = Builder.CreateLoad(alloca);
+    Value* nextLoopVar = Builder.CreateFAdd(curLoopVarVal, stepVal, "nextvar");
+    Builder.CreateStore(nextLoopVar, alloca);
 
-  // Compute and evaluate the end condition.
-  Value* endCond = end->codegenExpr();
-  if (!endCond) return false;
-  // Convert condition to a bool by comparing non-equal to 0.0.
-  endCond = Builder.CreateFCmpONE(
-    endCond, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "loopcond");
+    // Compute and evaluate the end condition.
+    endCond = end->codegenExpr();
+    if (!endCond) return CodegenRes(false, false);
+    // Convert condition to a bool by comparing non-equal to 0.0.
+    endCond = Builder.CreateFCmpONE(
+      endCond, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "loopcond");
+  }
   
   // Create the "after loop" block and insert it.
   BasicBlock* afterLoopBB = BasicBlock::Create(TheContext, "afterloop", parentFun);
   // Insert the conditional branch into the end of afterLoopBB.
-  Builder.CreateCondBr(endCond, loopBB, afterLoopBB);
+  if (endCond != nullptr) {
+    Builder.CreateCondBr(endCond, loopBB, afterLoopBB);
+  }
   
   // Any new code will be inserted in AfterBB.
   Builder.SetInsertPoint(afterLoopBB);
@@ -383,17 +394,21 @@ bool ForStmtAST::codegen() {
   } else {
     NamedValues.erase(varName);
   }
-  return true;
+  return CodegenRes(true, false);
 }
 
-bool BlockStmtAST::codegen() {
+CodegenRes BlockStmtAST::codegen() {
   for (const std::unique_ptr<StatementAST>& e : body) {
-    if (!e->codegen()) return false;
+    auto stmtRes = e->codegen();
+    if (!stmtRes.success) return stmtRes;
+    if (stmtRes.ret) {
+      return CodegenRes(true, true);
+    }
   }
-  return true;
+  return CodegenRes(true, false);
 }
 
-bool VariableDeclAST::codegen() {
+CodegenRes VariableDeclAST::codegen() {
   Function* fun = Builder.GetInsertBlock()->getParent();
 
   // Emit the initializer before adding the variable to scope, this prevents
@@ -406,7 +421,7 @@ bool VariableDeclAST::codegen() {
   Value* initVal;
   if (val) {
     initVal = val->codegenExpr();
-    if (initVal == nullptr) return false;
+    if (initVal == nullptr) return CodegenRes(false, false);
   } else {
     initVal = llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0));
   }
@@ -418,5 +433,5 @@ bool VariableDeclAST::codegen() {
   // Remember this binding.
   // TODO(andrei): When do we remove the variable from scope?
   NamedValues[name] = alloca;
-  return true;
+  return CodegenRes(true, false);
 }

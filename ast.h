@@ -14,11 +14,16 @@ using std::vector;
 using std::unique_ptr;
 using std::move;
 
+struct CodegenRes {
+  bool success, ret;
+  CodegenRes(bool success, bool ret) : success(success), ret(ret) {};
+};
+
 class StatementAST {
 public:
   virtual ~StatementAST() {}
   // Returns true on success, false on error.
-  virtual bool codegen() = 0;  
+  virtual CodegenRes codegen() = 0;  
   virtual string print() = 0;
 };
 
@@ -28,7 +33,7 @@ public:
   virtual ~ExprAST() {}
   // codegenExpr is like codegen, except it return a value.
   virtual llvm::Value* codegenExpr() = 0;  
-  virtual bool codegen() override;
+  virtual CodegenRes codegen() override;
 };
 
 
@@ -66,7 +71,7 @@ public:
   VariableDeclAST(const std::string& name, std::unique_ptr<ExprAST> val) : 
     name(name), val(std::move(val)) {}
 
-  bool codegen() override;
+  CodegenRes codegen() override;
   string print() override;
 };
 
@@ -113,7 +118,7 @@ public:
       std::unique_ptr<StatementAST> elseStmt) : 
     condExpr(std::move(condExpr)), thenStmt(std::move(thenStmt)), elseStmt(std::move(elseStmt)) {};
 
-  bool codegen() override;
+  CodegenRes codegen() override;
   string print() override;
 };
 
@@ -135,7 +140,7 @@ public:
     : varName(varName), start(std::move(start)), end(std::move(end)),
       step(std::move(step)), body(std::move(body)) {}
 
-  bool codegen() override;
+  CodegenRes codegen() override;
   string print() override;
 };
 
@@ -147,7 +152,7 @@ public:
   BlockStmtAST(std::vector<std::unique_ptr<StatementAST>> body)
     : body(std::move(body)) {}
 
-  bool codegen() override;
+  CodegenRes codegen() override;
   string print() override;
 };
 
@@ -158,7 +163,7 @@ private:
 public:
   ReturnStmtAST(unique_ptr<ExprAST> expr) : expr(std::move(expr)) {}
 
-  bool codegen() override;
+  CodegenRes codegen() override;
   string print() override;
 };
 

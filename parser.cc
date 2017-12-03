@@ -396,7 +396,6 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
   getNextToken();  // eat ')'.
 
-  fprintf(stderr, "!!! ParsePrototypes - args: %lu\n", argNames.size());
   return std::make_unique<PrototypeAST>(fnName, std::move(argNames));
 }
 
