@@ -121,7 +121,6 @@ static llvm::AllocaInst* createEntryBlockAlloca(
 }
 
 Value* NumberExprAST::codegenExpr() {
-  fprintf(stderr, "!!! NumberExprAST::codegen: %d %d %d\n", isFP, isInt, isStr);
   if (isFP) {
     return llvm::ConstantFP::get(TheContext, llvm::APFloat(dval));
   } else if (isInt) {
@@ -294,7 +293,6 @@ Value* CallExprAST::codegenExpr() {
 
 Function* PrototypeAST::codegen() const {
   // The signature of the params.
-  fprintf(stderr, "!!! PrototypeAST::codegen - args: %lu\n", argNames.size());
   vector<Type*> paramTypes;
   for (size_t i = 0; i < argNames.size(); i++) {
     llvm::Type* llvmType = getLLVMType(argTypes[i]);

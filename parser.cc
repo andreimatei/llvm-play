@@ -57,7 +57,6 @@ static std::unique_ptr<ExprAST> ParseNumberExpr(bool fp) {
 }
 
 static std::unique_ptr<ExprAST> ParseStringLiteral() {
-  fprintf(stderr, "!!! parser found str literal: %s\n", StrVal.c_str());
   auto res = std::make_unique<NumberExprAST>(); 
   *res = NumberExprAST::FromStr(StrVal);
   getNextToken(); // eat the literal
@@ -275,7 +274,6 @@ static std::unique_ptr<StatementAST> ParseVariableDeclStmt() {
       return nullptr;
     }
   }
-  fprintf(stderr, "!!! creating variable decl: %s %d\n", name.c_str(), *type);
 
   return std::make_unique<VariableDeclAST>(name, *type, std::move(val));
 }
@@ -555,9 +553,7 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpression() {
   // Evaluate a top-level expression into an anonymous function.
-  fprintf(stderr, "!!! HandleTopLevelExpressio 1\n");
   if (auto fnAST = ParseTopLevelExpr()) {
-    fprintf(stderr, "!!! HandleTopLevelExpressio 2\n");
     if (auto* fnIR = fnAST->codegen()) {
       fprintf(stderr, "Read a top-level expr:");
       fnIR->print(llvm::errs());

@@ -81,7 +81,6 @@ int gettok() {
 
   // parse a string literal
   if (lastCh == '"') {
-    fprintf(stderr, "!!! lexer found str literal\n");
     lastCh = getchar();
     std::string lit;
     while (lastCh != '"') {
