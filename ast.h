@@ -9,6 +9,8 @@
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Function.h"
 
+#include "parser.h"
+
 using std::string;
 using std::vector;
 using std::unique_ptr;
@@ -40,12 +42,29 @@ public:
 /// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
 public:
-  NumberExprAST(double val): val(val){}
+  // NumberExprAST(double val): val(val){}
+  static NumberExprAST FromFP(double val) {
+    NumberExprAST n;
+    n.isFP = true;
+    n.dval = val;
+    n.ival = 0;
+    return n;
+  }
+  static NumberExprAST FromInt(long int val) {
+    NumberExprAST n;
+    n.isFP = false;
+    n.dval = 0;
+    n.ival = val;
+    return n;
+  }
   virtual llvm::Value* codegenExpr();
   virtual string print();
 
+  bool isFP;
+
 private:
-  double val;
+  double dval;
+  int ival;
 };
 
 // Variable references.
@@ -64,14 +83,29 @@ public:
 class VariableDeclAST : public StatementAST {
 private:
   std::string name;
+  VarType type;
   // Initial value. Null if the variable is to be zero-initialized.
   std::unique_ptr<ExprAST> val;
 
 public:
-  VariableDeclAST(const std::string& name, std::unique_ptr<ExprAST> val) : 
-    name(name), val(std::move(val)) {}
+  VariableDeclAST(const std::string& name, VarType type, std::unique_ptr<ExprAST> val) : 
+    name(name), type(type), val(std::move(val)) {}
 
   CodegenRes codegen() override;
+  string print() override;
+};
+
+class UnaryExprAST : public ExprAST {
+private:
+  char op;
+  std::unique_ptr<ExprAST> operand;
+
+public:
+  UnaryExprAST(
+      char op, 
+      std::unique_ptr<ExprAST> operand) : 
+    op(op), operand(std::move(operand)) {}
+  llvm::Value* codegenExpr() override;
   string print() override;
 };
 
@@ -173,11 +207,23 @@ public:
 class PrototypeAST {
 private:
   string name;
-  vector<string> args;
+  VarType retType;
+  vector<string> argNames;
+  vector<VarType> argTypes;
 
 public:
-  PrototypeAST(string name, vector<string> args) : name(name), args(std::move(args)) {}
+  PrototypeAST(
+      string name, 
+      VarType retType,
+      vector<string> argNames, 
+      vector<VarType> argTypes) 
+    : name(name),
+      retType(retType),
+      argNames(std::move(argNames)), argTypes(std::move(argTypes)) {}
   string getName() const { return name; }
+  VarType getArgType(int i) const {
+    return argTypes[i];
+  }
   llvm::Function* codegen() const;
 };
 

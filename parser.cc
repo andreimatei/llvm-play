@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <set>
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -15,6 +16,8 @@ using std::vector;
 using std::move;
 
 using llvm::Value;
+
+std::set<char> UnaryOps;
 
 // CurTok/getNextToken - Provide a simple token buffer. CurTok is the current
 // token the parser is looking at. getNextToken reads another token from the /
@@ -42,9 +45,14 @@ Value* logErrorV(const char* str) {
 }
 
 /// numberexpr ::= number
-static std::unique_ptr<ExprAST> ParseNumberExpr() {
-  auto res = std::make_unique<NumberExprAST>(NumVal); 
-  getNextToken(); // advance
+static std::unique_ptr<ExprAST> ParseNumberExpr(bool fp) {
+  auto res = std::make_unique<NumberExprAST>(); 
+  if (fp) {
+   *res = NumberExprAST::FromFP(FPVal);
+  } else {
+   *res = NumberExprAST::FromInt(IntVal);
+  }
+  getNextToken(); // eat the literal
   return std::move(res);
 }
 
@@ -175,7 +183,7 @@ static unique_ptr<StatementAST> ParseForStmt() {
     if (!step) return nullptr;
   } else {
     // If a step is not specified, the default is 1.0.
-    step = std::make_unique<NumberExprAST>(1.0);
+    step = std::make_unique<NumberExprAST>(NumberExprAST::FromFP(1.0));
   }
 
   unique_ptr<StatementAST> body = ParseStmt();
@@ -214,7 +222,25 @@ static unique_ptr<StatementAST> ParseBlockStmt() {
   return std::make_unique<BlockStmtAST>(std::move(stmts));
 }
 
-/// ::= 'var' <identifier> ('=' expression)?
+static std::unique_ptr<VarType> ParseDataType() {
+  if (CurTok != tok_identifier) {
+    fprintf(stderr, "expected type but found token: %d\n", CurTok);
+    return nullptr;
+  }
+  if (IdentifierStr == "double") {
+    return std::make_unique<VarType>(type_double);
+  }
+  if (IdentifierStr == "byte") {
+    return std::make_unique<VarType>(type_byte);
+  }
+  if (IdentifierStr == "byte_ptr") {
+    return std::make_unique<VarType>(type_byte_ptr);
+  }
+  fprintf(stderr, "didn't recognize type: %s\n", IdentifierStr.c_str());
+  return nullptr;
+}
+
+/// ::= 'var' <identifier> <type> ('=' expression)?
 static std::unique_ptr<StatementAST> ParseVariableDeclStmt() {
   getNextToken();  // eat the var.
   string name;
@@ -228,6 +254,12 @@ static std::unique_ptr<StatementAST> ParseVariableDeclStmt() {
 
   getNextToken();  // eat the identifier.
 
+  unique_ptr<VarType> type = ParseDataType();
+  if (type == nullptr) {
+    return logError("failed to parse type");
+  }
+  getNextToken();  // eat the data type.
+
   if (CurTok == '=') {
     getNextToken();  // eat the '='.
     val = ParseExpression();
@@ -235,7 +267,9 @@ static std::unique_ptr<StatementAST> ParseVariableDeclStmt() {
       return nullptr;
     }
   }
-  return std::make_unique<VariableDeclAST>(name, std::move(val));
+  fprintf(stderr, "!!! creating variable decl: %s %d\n", name.c_str(), *type);
+
+  return std::make_unique<VariableDeclAST>(name, *type, std::move(val));
 }
 
 /// primary
@@ -249,16 +283,27 @@ static std::unique_ptr<StatementAST> ParseVariableDeclStmt() {
 //    ::= returnexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
-  default:
-    fprintf(stderr, "unknown token when expecting an expression: %d\n", CurTok);
-    return logError("unknown token when expecting an expression");
   case tok_identifier:
     return ParseIdentifierExpr();
-  case tok_number:
-    return ParseNumberExpr();
+  case tok_fp_literal:
+    return ParseNumberExpr(true /* fp */);
+  case tok_int_literal:
+    return ParseNumberExpr(false /* fp */);
   case '(':
     return ParseParenExpr();
   }
+  if (isascii(CurTok)) {
+    if (UnaryOps.find(CurTok) != UnaryOps.end()) {
+      char op = CurTok;
+      getNextToken();  // eat the unary operator
+      auto operand = ParsePrimary();
+      if (!operand) return nullptr;
+      return std::make_unique<UnaryExprAST>(op, std::move(operand));
+    }
+  }
+
+  fprintf(stderr, "unknown token when expecting an expression: %d\n", CurTok);
+  return logError("unknown token when expecting an expression");
 }
 
 static std::unique_ptr<StatementAST> ParseStmt() {
@@ -268,7 +313,9 @@ static std::unique_ptr<StatementAST> ParseStmt() {
     return logError("unknown token when expecting an expression");
   case tok_identifier:
     return ParseExpression();
-  case tok_number:
+  case tok_fp_literal:
+    return ParseExpression();
+  case tok_int_literal:
     return ParseExpression();
   case '(':
     return ParseExpression();
@@ -301,6 +348,9 @@ int GetTokPrecedence() {
 }
 
 void InitParser() {
+  UnaryOps.insert('&');
+  UnaryOps.insert('*');
+
   // Install standard binary operators.
   // 1 is lowest precedence.
   BinopPrecedence['='] = 2;
@@ -367,10 +417,19 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(
 }
 
 /// prototype
-///   ::= id '(' id* ')'
+///   ::= <type> id '(' id type* ')'
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
-  if (CurTok != tok_identifier)
+  if (CurTok != tok_identifier) {
+    return logErrorP("Expected type in prototype");
+  }
+
+  unique_ptr<VarType> type = ParseDataType();
+  if (type == nullptr) return nullptr; 
+  getNextToken();  // eat the return type
+
+  if (CurTok != tok_identifier) {
     return logErrorP("Expected function name in prototype");
+  }
 
   std::string fnName = IdentifierStr;
   getNextToken();  // eat the function name
@@ -381,11 +440,22 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
   // Read the list of argument names.
   std::vector<std::string> argNames;
+  std::vector<VarType> argTypes;
   while (true) {
     int tok = getNextToken();
     if (tok != tok_identifier) {
       break;
     }
+
+    unique_ptr<VarType> type = ParseDataType();
+    if (type == nullptr) return nullptr;
+    argTypes.push_back(*type);
+
+    tok = getNextToken();
+    if (tok != tok_identifier) {
+      return logErrorP("expected arg name");
+    }
+
     argNames.push_back(IdentifierStr);
 
     tok = getNextToken();
@@ -400,7 +470,8 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
   getNextToken();  // eat ')'.
 
-  return std::make_unique<PrototypeAST>(fnName, std::move(argNames));
+  return std::make_unique<PrototypeAST>(
+      fnName, *type, std::move(argNames), std::move(argTypes));
 }
 
 /// definition ::= 'def' prototype expression
@@ -427,7 +498,8 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   if (auto e = ParseExpression()) {
     // Make an anonymous prototype.
     auto proto = std::make_unique<PrototypeAST>(
-        "__anon_expr", std::vector<std::string>());
+        "__anon_expr", type_byte, 
+        std::vector<std::string>(), std::vector<VarType>());
     // Generate a return statement.
     auto ret = std::make_unique<ReturnStmtAST>(std::move(e));
     return std::make_unique<FunctionAST>(std::move(proto), std::move(ret));
@@ -492,10 +564,12 @@ static void HandleTopLevelExpression() {
 
       // Get the symbol's address and cast it to the right type (takes no
       // arguments, returns a double) so we can call it as a native function.
-      double (*fp)() = (double (*)())(intptr_t)(*exprSymbol.getAddress());
-      
-      double res = fp();
-      fprintf(stderr, "Evaluated to: %f\n", res);
+      // !!! double (*fp)() = (double (*)())(intptr_t)(*exprSymbol.getAddress());
+      // double res = fp();
+      // fprintf(stderr, "Evaluated to: %f\n", res);
+      char (*fp)() = (char(*)())(intptr_t)(*exprSymbol.getAddress());
+      char res = fp();
+      fprintf(stderr, "Evaluated to: %d\n", int(res));
 
       // Remove the module with the anonymous function.
       TheJIT->removeModule(modHandle);

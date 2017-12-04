@@ -3,7 +3,8 @@
 #include "lexer.h"
 
 std::string IdentifierStr; // Filled in if tok_identifier
-double NumVal;             // Filled in if tok_number
+long int IntVal;           // Filled in if tok_int_literal
+double FPVal;              // Filled in if tok_fp_literal
 
 /// gettok - Return the next token from standard input.
 int gettok() {
@@ -15,10 +16,10 @@ int gettok() {
     lastCh = getchar();
   }
 
-  if (isalpha(lastCh)) {  // identifier: [a-zA-Z][a-zA-Z0-9]*
+  if (isalpha(lastCh) || (lastCh == '_')) {  // identifier: [a-zA-Z][a-zA-Z0-9]_*
     IdentifierStr = lastCh;
 
-    while (isalnum(lastCh = getchar())) {
+    while (isalnum(lastCh = getchar()) || (lastCh == '_')) {
       IdentifierStr += lastCh;
     }
     if (IdentifierStr == "def") {
@@ -58,14 +59,23 @@ int gettok() {
     return tok_semi;
   }
 
+  bool found_dec = false;
   if (isdigit(lastCh) || lastCh == '.') { // Number: [0-9.]+
     std::string num;
     do {
       num += lastCh;
       lastCh = getchar();
+      if (lastCh == '.') {
+        found_dec = true;
+      }
     } while (isdigit(lastCh) || lastCh == '.');
-    NumVal = strtod(num.c_str(), nullptr /* endptr */);
-    return tok_number;
+    if (found_dec) {
+      FPVal = strtod(num.c_str(), nullptr /* endptr */);
+      return tok_fp_literal;
+    } else {
+      IntVal = strtol(num.c_str(), nullptr /* endptr */, 10 /* base */);
+      return tok_int_literal;
+    }
   }
   
   if (lastCh == '#') {

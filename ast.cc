@@ -5,7 +5,11 @@
 
 std::string NumberExprAST::print() {
   std::ostringstream s;
-  s << val;
+  if (isFP) {
+    s << dval;
+  } else {
+    s << ival;
+  }
   return s.str();
 }
 
@@ -26,6 +30,10 @@ std::string VariableDeclAST::print() {
 
 std::string BinaryExprAST::print() {
   return "(" + lhs->print() + op + rhs->print() + ")";
+}
+
+std::string UnaryExprAST::print() {
+  return op + operand->print();
 }
 
 std::string CallExprAST::print() {

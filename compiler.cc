@@ -19,6 +19,8 @@ using std::vector;
 using std::sprintf;
 using std::string;
 using std::pair;
+using std::unique_ptr;
+using std::make_unique;
 
 using llvm::Function;
 using llvm::Value;
@@ -26,6 +28,7 @@ using llvm::LLVMContext;
 using llvm::IRBuilder;
 using llvm::Module;
 using llvm::Type;
+using llvm::PointerType;
 using llvm::BasicBlock;
 
 LLVMContext TheContext;
@@ -33,8 +36,53 @@ static IRBuilder<> Builder(TheContext);
 std::unique_ptr<Module> TheModule;
 std::unique_ptr<llvm::legacy::FunctionPassManager> TheFPM;
 
+struct Variable {
+  VarType type;
+  llvm::Type* llvmType;
+  llvm::AllocaInst* allocaInst;  // Space for the value.
+
+  Variable(VarType type, llvm::Type* llvmType, llvm::AllocaInst* allocaInst)
+    : type(type), llvmType(llvmType), allocaInst(allocaInst) {}
+};
+
+llvm::Type* getLLVMType(VarType type) {
+  switch(type) {
+  case type_double:
+    return Type::getDoubleTy(TheContext);
+  case type_byte:
+    return Type::getInt8Ty(TheContext);
+  case type_bool:
+    return Type::getInt1Ty(TheContext);
+  case type_byte_ptr:
+    return PointerType::get(Type::getInt8Ty(TheContext), 0 /* address_space */);
+  }
+}
+
+llvm::Value* getZeroVal(VarType type) {
+  auto llvmType = getLLVMType(type);
+  assert(llvmType);
+  switch(type) {
+  case type_double:
+    // TODO(andrei): can I use getNullValue() here?
+    return llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0));
+  case type_byte:
+  case type_bool:
+  case type_byte_ptr:
+    return llvm::Constant::getNullValue(llvmType);
+  }
+}
+
 // Variable name to space where the value is stored.
-static std::map<string, llvm::AllocaInst*> NamedValues;
+static std::map<string, Variable> NamedValues;
+
+// Gets a copy.
+unique_ptr<Variable> getVar(const string& name) {
+  auto it = NamedValues.find(name);
+  if (it == NamedValues.end()) {
+    return nullptr;
+  }
+  return make_unique<Variable>(it->second);
+}
 
 std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 // Map of function name to the (latest) prototype declared with that name.
@@ -65,25 +113,73 @@ Function* resolveFunction(const string& name) {
 // used for mutable variables etc.
 static llvm::AllocaInst* createEntryBlockAlloca(
     Function* fun,
-    const std::string& varName) {
+    const std::string& varName,
+    llvm::Type* type) {
   IRBuilder<> TmpB(
       &fun->getEntryBlock(), fun->getEntryBlock().begin());
-  return TmpB.CreateAlloca(Type::getDoubleTy(TheContext), 0, varName.c_str());
+  return TmpB.CreateAlloca(type, 0, varName.c_str());
 }
 
 Value* NumberExprAST::codegenExpr() {
-  return llvm::ConstantFP::get(TheContext, llvm::APFloat(val));
+  if (isFP) {
+    return llvm::ConstantFP::get(TheContext, llvm::APFloat(dval));
+  } else {
+    return llvm::Constant::getIntegerValue(Type::getInt8Ty(TheContext), 
+        llvm::APInt(8, ival, false /* signed */));
+  }
 }
 
 Value* VariableExprAST::codegenExpr() {
-  Value* v = NamedValues[name];
+  unique_ptr<Variable> v = getVar(name);
   if (!v) {
     char msg[1000];
     std::sprintf(msg, "unknown variable %s", name.c_str());
     return logErrorV(msg);
   }
   // Load the value from memory.
-  return Builder.CreateLoad(v, name.c_str());
+  return Builder.CreateLoad(v->allocaInst, name.c_str());
+}
+
+Value* UnaryExprAST::codegenExpr() {
+  VariableExprAST* varAST = nullptr;
+  unique_ptr<Variable> var;
+  switch (op) {
+  case '&':
+    varAST = dynamic_cast<VariableExprAST*>(operand.get());
+    if (!varAST) {
+      return logErrorV("address of can only be applied to variables");
+    }
+    var = getVar(varAST->getName());
+    if (!var) {
+      char msg[1000];
+      sprintf(msg, "unknown variable: %s", varAST->getName().c_str());
+      return logErrorV(msg);
+    }
+    // The var itself is the address we're looking for.
+    return var->allocaInst;
+  case '*':
+    varAST = dynamic_cast<VariableExprAST*>(operand.get());
+    if (!varAST) {
+      return logErrorV("dereferencing can only be applied to variables");
+    }
+    var = getVar(varAST->getName());
+    if (!var) {
+      char msg[1000];
+      sprintf(msg, "unknown variable: %s", varAST->getName().c_str());
+      return logErrorV(msg);
+    }
+    if (var->type != type_byte_ptr) {
+      return logErrorV("can only dereference pointers");
+    }
+    {
+      Value* loadPtr = Builder.CreateLoad(var->allocaInst, "load_ptr");
+      return Builder.CreateLoad(loadPtr, "deref");
+    }
+  default:
+    char msg[1000];
+    sprintf(msg, "unknown unary op: %c", op);
+    return logErrorV(msg);
+  }
 }
 
 Value* BinaryExprAST::codegenExpr() {
@@ -99,13 +195,13 @@ Value* BinaryExprAST::codegenExpr() {
     Value* r = rhs->codegenExpr();
 
     // Lookup the name.
-    Value* var = NamedValues[varAST->getName()];
+    unique_ptr<Variable> var = getVar(varAST->getName());
     if (!var) {
       char msg[1000];
-      sprintf(msg, "unknown varable: %s", varAST->getName().c_str());
+      sprintf(msg, "unknown variable: %s", varAST->getName().c_str());
       return logErrorV(msg);
     }
-    Builder.CreateStore(r, var);
+    Builder.CreateStore(r, var->allocaInst);
     // Return the result of the rhs.
     return r;
   }
@@ -119,17 +215,22 @@ Value* BinaryExprAST::codegenExpr() {
 
   switch (op) {
   case '+':
-    return Builder.CreateFAdd(l, r, "addtmp");
+    // return Builder.CreateFAdd(l, r, "addtmp");
+    return Builder.CreateAdd(l, r, "addtmp");
   case '-':
-    return Builder.CreateFSub(l, r, "subtmp");
+    // return Builder.CreateFSub(l, r, "subtmp");
+    return Builder.CreateSub(l, r, "subtmp");
   case '*':
-    return Builder.CreateFMul(l, r, "multmp");
+    // return Builder.CreateFMul(l, r, "multmp");
+    return Builder.CreateMul(l, r, "multmp");
   case '<':
     // compare unordered less than
-    l = Builder.CreateFCmpULT(l, r, "cmptmp");
+    // !!! l = Builder.CreateFCmpULT(l, r, "cmptmp");
+    l = Builder.CreateICmpULT(l, r, "cmptmp");
+    // !!!
     // Convert bool 0/1 to double 0.0 or 1.0
-    return Builder.CreateUIToFP(
-        l, Type::getDoubleTy(TheContext), "booltmp");
+    // return Builder.CreateUIToFP(
+    //     l, Type::getDoubleTy(TheContext), "booltmp");
   default:
     char msg[1000];
     sprintf(msg, "invalid bin op: %c", op);
@@ -167,60 +268,64 @@ Value* CallExprAST::codegenExpr() {
 
 Function* PrototypeAST::codegen() const {
   // The signature of the params.
-  fprintf(stderr, "!!! PrototypeAST::codegen - args: %lu\n", args.size());
-  vector<Type*> paramTypes(args.size(), Type::getDoubleTy(TheContext));
+  fprintf(stderr, "!!! PrototypeAST::codegen - args: %lu\n", argNames.size());
+  vector<Type*> paramTypes;
+  for (size_t i = 0; i < argNames.size(); i++) {
+    llvm::Type* llvmType = getLLVMType(argTypes[i]);
+    if (llvmType == nullptr) return nullptr;
+    paramTypes.push_back(llvmType); 
+  }
+  llvm::Type* retLLVMType = getLLVMType(retType);
+  if (retLLVMType == nullptr) return nullptr;
   llvm::FunctionType* ft = llvm::FunctionType::get(
-      Type::getDoubleTy(TheContext), paramTypes, false /* isVarArg */);
+      retLLVMType, paramTypes, false /* isVarArg */);
   // Insert the function into the module.
   Function* f = Function::Create(ft, Function::ExternalLinkage, name, TheModule.get());
 
   // Set argument names;
   int idx = 0;
   for (auto& p : f->args()) {
-    p.setName(args[idx++]);
+    p.setName(argNames[idx++]);
   }
   return f;
 }
 
 Function* FunctionAST::codegen() {
-  fprintf(stderr, "!!! FunctionAST::codegen 1\n");
   const PrototypeAST& p = *proto;
   // Transfer ownership of the prototype to the FunctionProtos map.
   FunctionProtos[p.getName()] = std::move(proto);
   Function* f = resolveFunction(p.getName());
-  fprintf(stderr, "!!! FunctionAST::codegen 2.\n");
   // We just added the function above.
   assert(f);
 
   BasicBlock *bb = BasicBlock::Create(TheContext, "entry", f);
   Builder.SetInsertPoint(bb);
-  fprintf(stderr, "!!! FunctionAST::codegen 3\n");
 
   // Record the function arguments in the NamedValues map.
   NamedValues.clear();
+  int i = 0;
   for (auto& arg : f->args()) {
-    fprintf(stderr, "!!! FunctionAST::codegen 4\n");
+
+    VarType type = p.getArgType(i);
+    llvm::Type* llvmType = arg.getType();
     // Create an alloca for this variable.
-    llvm::AllocaInst* alloca = createEntryBlockAlloca(f, arg.getName());
+    llvm::AllocaInst* alloca = createEntryBlockAlloca(f, arg.getName(), llvmType);
     // Store the initial value into the alloca.
     Builder.CreateStore(&arg, alloca);
 
     // Add the variable to the symbol table.
-    NamedValues[arg.getName()] = alloca;
+    NamedValues.insert(std::make_pair(arg.getName(), Variable(type, llvmType, alloca)));
+    i++;
   }
-  fprintf(stderr, "!!! FunctionAST::codegen 5\n");
 
   auto bodyRes = body->codegen();
-  fprintf(stderr, "!!! FunctionAST::codegen 6\n");
   if (!bodyRes.success) {
     // In case of error in the body, we erase the function so it can be defined
     // again.
     f->eraseFromParent();
     return nullptr;
   }
-  fprintf(stderr, "!!! FunctionAST::codegen 7 name: %s\n", p.getName().c_str());
   bool xxx = (p.getName() != "magic");
-  fprintf(stderr, "!!! FunctionAST::codegen 77 t: %d \n", xxx);
 
   if (p.getName() != "magic") {
     BasicBlock* lastBlock = Builder.GetInsertBlock();
@@ -230,36 +335,32 @@ Function* FunctionAST::codegen() {
     // !!! now the return value is in the generated code, but I should assert that.
     // Builder.CreateRet(retVal);
   } else {
-    fprintf(stderr, "!!! FunctionAST::codegen 8\n");
-    Function* parentFun = Builder.GetInsertBlock()->getParent();
-    BasicBlock* b2 = BasicBlock::Create(TheContext, "b2", parentFun);
-    BasicBlock* b3 = BasicBlock::Create(TheContext, "b3", parentFun);
-
-    Value* arg0 = NamedValues[f->args().begin()->getName()];
-    auto condCode = Builder.CreateFCmpONE(
-        arg0, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "ifcond");
-    Builder.CreateCondBr(condCode, b2, b3);
-
-    Builder.SetInsertPoint(b2);
-    auto bogusRet = llvm::ConstantFP::get(TheContext, llvm::APFloat(1.0));
-    Builder.CreateRet(bogusRet);
-
-    Builder.SetInsertPoint(b3);
-    bogusRet = llvm::ConstantFP::get(TheContext, llvm::APFloat(2.0));
-    Builder.CreateRet(bogusRet);
+    // fprintf(stderr, "!!! FunctionAST::codegen 8\n");
+    // Function* parentFun = Builder.GetInsertBlock()->getParent();
+    // BasicBlock* b2 = BasicBlock::Create(TheContext, "b2", parentFun);
+    // BasicBlock* b3 = BasicBlock::Create(TheContext, "b3", parentFun);
+    //
+    // Value* arg0 = NamedValues[f->args().begin()->getName()];
+    // auto condCode = Builder.CreateFCmpONE(
+    //     arg0, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "ifcond");
+    // Builder.CreateCondBr(condCode, b2, b3);
+    //
+    // Builder.SetInsertPoint(b2);
+    // auto bogusRet = llvm::ConstantFP::get(TheContext, llvm::APFloat(1.0));
+    // Builder.CreateRet(bogusRet);
+    //
+    // Builder.SetInsertPoint(b3);
+    // bogusRet = llvm::ConstantFP::get(TheContext, llvm::APFloat(2.0));
+    // Builder.CreateRet(bogusRet);
   }
   
   // Validate the generated code, checking for consistency.
-  fprintf(stderr, "!!! FunctionAST::codegen 9\n");
   // !!!
   f->print(llvm::errs());
 
-  fprintf(stderr, "!!! FunctionAST::codegen about to verify\n");
   assert(!llvm::verifyFunction(*f, &llvm::errs()));
-  fprintf(stderr, "!!! FunctionAST::codegen 10\n");
 
   TheFPM->run(*f);
-  fprintf(stderr, "!!! FunctionAST::codegen 11\n");
 
   return f;
 }
@@ -332,7 +433,9 @@ CodegenRes ReturnStmtAST::codegen() {
 // afterloop:
 CodegenRes ForStmtAST::codegen() {
   Function* fun = Builder.GetInsertBlock()->getParent();
-  llvm::AllocaInst* alloca = createEntryBlockAlloca(fun, varName);
+  // TODO(andrei): this variable shouldn't always be a double.
+  llvm::AllocaInst* alloca = createEntryBlockAlloca(
+      fun, varName, Type::getDoubleTy(TheContext));
 
   // Emit the start code first, without the loop variable in scope.
   Value* startVal = start->codegenExpr();
@@ -353,8 +456,8 @@ CodegenRes ForStmtAST::codegen() {
   // Within the loop, the variable is defined equal to the variable we just
   // introduced. If it shadows an existing variable, we have to restore it, so
   // save it now.
-  llvm::AllocaInst* oldValForLoopVar = NamedValues[varName];
-  NamedValues[varName] = alloca;
+  unique_ptr<Variable> oldLoopVar = getVar(varName);
+  NamedValues.insert(std::make_pair(varName, Variable(type_double, getLLVMType(type_double), alloca)));
   // Generate code for the body. The generated Value is ignored.
   CodegenRes bodyRes = body->codegen();
   if (!bodyRes.success) return bodyRes;
@@ -389,8 +492,8 @@ CodegenRes ForStmtAST::codegen() {
   Builder.SetInsertPoint(afterLoopBB);
 
   // Restore the unshadowed variable.
-  if (oldValForLoopVar) {
-    NamedValues[varName] = oldValForLoopVar;
+  if (oldLoopVar != nullptr) {
+    NamedValues.insert(std::make_pair(varName, *oldLoopVar));
   } else {
     NamedValues.erase(varName);
   }
@@ -411,6 +514,9 @@ CodegenRes BlockStmtAST::codegen() {
 CodegenRes VariableDeclAST::codegen() {
   Function* fun = Builder.GetInsertBlock()->getParent();
 
+  llvm::Type* llvmType = getLLVMType(type);
+  if (llvmType == nullptr) return CodegenRes(false, false);
+
   // Emit the initializer before adding the variable to scope, this prevents
   // the initializer from referencing the variable itself, and permits stuff
   // like this:
@@ -423,15 +529,15 @@ CodegenRes VariableDeclAST::codegen() {
     initVal = val->codegenExpr();
     if (initVal == nullptr) return CodegenRes(false, false);
   } else {
-    initVal = llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0));
+    initVal = getZeroVal(type);
   }
   // Allocate space for the variable on the heap. 
-  llvm::AllocaInst *alloca = createEntryBlockAlloca(fun, name);
+  llvm::AllocaInst *alloca = createEntryBlockAlloca(fun, name, llvmType);
   // Store the initial value in the allocated memory.
   Builder.CreateStore(initVal, alloca);
   
   // Remember this binding.
   // TODO(andrei): When do we remove the variable from scope?
-  NamedValues[name] = alloca;
+  NamedValues.insert(std::make_pair(name, Variable(type, llvmType, alloca)));
   return CodegenRes(true, false);
 }
