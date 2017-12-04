@@ -9,3 +9,8 @@ def byte f() {
 def byte prog_main() {
   return f();
 }
+
+def byte entry(byte_ptr k, byte_ptr v) {
+  var needle byte_ptr = "xbc";
+  return strcmp(needle, v);
+}

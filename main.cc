@@ -87,7 +87,7 @@ string FileToString(const string& path) {
 }
 
 void RunProgMain() {
-  llvm::JITSymbol exprSymbol = TheJIT->findSymbol("prog_main");
+  llvm::JITSymbol exprSymbol = TheJIT->findSymbol("entry");
   assert(exprSymbol && "Function not found");
 
   // Get the symbol's address and cast it to the right type (takes no
@@ -95,8 +95,14 @@ void RunProgMain() {
   // !!! double (*fp)() = (double (*)())(intptr_t)(*exprSymbol.getAddress());
   // double res = fp();
   // fprintf(stderr, "Evaluated to: %f\n", res);
-  char (*fp)() = (char(*)())(intptr_t)(*exprSymbol.getAddress());
-  char res = fp();
+  char (*fp)(char*,char*) = (char(*)(char*, char*))(intptr_t)(*exprSymbol.getAddress());
+  char* k = (char*)malloc(100);
+  char* v = (char*)malloc(100);
+  v[0] = 'x';
+  v[1] = 'b';
+  v[2] = 'c';
+  v[3] = 0;
+  char res = fp(k, v);
   fprintf(stderr, "Evaluated to: %d\n", int(res));
 }
 
