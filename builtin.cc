@@ -13,6 +13,52 @@ extern "C" DLLEXPORT double putchard(double x) {
   return 0;
 }
 
-extern "C" DLLEXPORT char my_strcmp(const char *str1, const char *str2) {
-  return char(strcmp(str1, str2)); 
+extern "C" char* skip_checksum(char *s) {
+  fprintf(stderr, "skipChecksum called with %p\n", s);
+  return s+4;
+}
+
+extern "C" char* skip_bytes(char *s, char numBytes) {
+  fprintf(stderr, "skipBytes called with %p\n", s);
+  return s+numBytes;
+}
+
+extern "C" char* skip_byte(char *s) {
+  fprintf(stderr, "skipByte called with %p\n", s);
+  return s+1;
+}
+
+extern "C" char* skip_int(char *s) {
+  char* origS = s;
+  while (true) {
+    if (*s & 128) {
+      s++;
+      continue;
+    }
+    break;
+  }
+  fprintf(stderr, "skipped int: %ld bytes\n", (s +1 - origS));
+  return ++s;
+}
+
+extern "C" DLLEXPORT char my_strcmp(const char *str1, char l1, const char *str2, char l2) {
+  // return char(strcmp(str1, str2)); 
+  char l = l1;
+  if (l2 < l1) l = l2;
+  for (int i = 0; i < l; i++) {
+    if (str1[i] < str2[i]) {
+      return -1;
+    }
+    if (str1[i] > str2[i]) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+extern "C" DLLEXPORT char streq(const char *str1, char l1, const char *str2, char l2) {
+  if (my_strcmp(str1, l1, str2, l2) == 0) {
+    return 1;
+  }
+  return 0;
 }

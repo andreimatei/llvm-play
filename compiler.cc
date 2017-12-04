@@ -349,7 +349,7 @@ Function* FunctionAST::codegen() {
     f->eraseFromParent();
     return nullptr;
   }
-  bool xxx = (p.getName() != "magic");
+  // bool xxx = (p.getName() != "magic");
 
   if (p.getName() != "magic") {
     BasicBlock* lastBlock = Builder.GetInsertBlock();
@@ -392,9 +392,11 @@ Function* FunctionAST::codegen() {
 CodegenRes IfStmtAST::codegen() {
   Value* condCode = condExpr->codegenExpr();
   if (!condCode) return CodegenRes(false, false); 
-  // Convert condition to a bool by comparing non-equal to 0.0.
-  condCode = Builder.CreateFCmpONE(
-      condCode, llvm::ConstantFP::get(TheContext, llvm::APFloat(0.0)), "ifcond");
+  // Convert condition to a bool by comparing non-equal to 0.
+  condCode = Builder.CreateICmpNE(
+      condCode,
+      llvm::Constant::getNullValue(condCode->getType()), "ifcond");
+      // !!! llvm::Constant::get(TheContext, llvm::APFloat(0)), "ifcond");
 
   // Get a reference to the function in which we're generating code. We'll
   // create new blocks in this function.

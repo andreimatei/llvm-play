@@ -86,8 +86,31 @@ string FileToString(const string& path) {
   return str;
 }
 
+std::string hex_to_string(const std::string& input)
+{
+    static const char* const lut = "0123456789ABCDEF";
+    size_t len = input.length();
+    if (len & 1) throw std::invalid_argument("odd length");
+
+    std::string output;
+    output.reserve(len / 2);
+    for (size_t i = 0; i < len; i += 2)
+    {
+        char a = input[i];
+        const char* p = std::lower_bound(lut, lut + 16, a);
+        if (*p != a) throw std::invalid_argument("not a hex digit");
+
+        char b = input[i + 1];
+        const char* q = std::lower_bound(lut, lut + 16, b);
+        if (*q != b) throw std::invalid_argument("not a hex digit");
+
+        output.push_back(((p - lut) << 4) | (q - lut));
+    }
+    return output;
+}
+
 void RunProgMain() {
-  llvm::JITSymbol exprSymbol = TheJIT->findSymbol("entry");
+  llvm::JITSymbol exprSymbol = TheJIT->findSymbol("prog_main");
   assert(exprSymbol && "Function not found");
 
   // Get the symbol's address and cast it to the right type (takes no
@@ -95,21 +118,19 @@ void RunProgMain() {
   // !!! double (*fp)() = (double (*)())(intptr_t)(*exprSymbol.getAddress());
   // double res = fp();
   // fprintf(stderr, "Evaluated to: %f\n", res);
-  char (*fp)(char*,char*) = (char(*)(char*, char*))(intptr_t)(*exprSymbol.getAddress());
+  char (*fp)(const char*,const char*) = (char(*)(const char*, const char*))(intptr_t)(*exprSymbol.getAddress());
   char* k = (char*)malloc(100);
-  char* v = (char*)malloc(100);
-  v[0] = 'x';
-  v[1] = 'b';
-  v[2] = 'c';
-  v[3] = 0;
-  char res = fp(k, v);
+  // char* v = (char*)malloc(100);
+
+  string hexStr = "87200EEC0A130213ECF81213B47813021504348A06A41505348D204CD71503288904150328890216014E16014F13C095011384950113D29501161144454C4956455220494E20504552534F4E1605545255434B16176567756C617220636F757274732061626F766520746865";
+  char res = fp(k, hex_to_string(hexStr).c_str());
   fprintf(stderr, "Evaluated to: %d\n", int(res));
 }
 
 int main() {
   GetNextChar = &getchar;
 
-  string progStr = FileToString("prog.in");
+  string progStr = FileToString("prog_real.in");
   CompileStr(progStr);
 
   InitParser();

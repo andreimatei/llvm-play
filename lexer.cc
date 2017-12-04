@@ -2,10 +2,40 @@
 
 #include "lexer.h"
 
+using std::string;
+
 std::string IdentifierStr; // Filled in if tok_identifier
 long int IntVal;           // Filled in if tok_int_literal
 double FPVal;              // Filled in if tok_fp_literal
 std::string StrVal;        // Filled in if tok_str_literal
+
+
+const std::string hexDigits("0123456789ABCDEF");
+
+char hexDigitToNum(char ch) {
+  int value = hexDigits.find(ch);
+  return char(value);
+}
+
+string ConvertHexString(string s) {
+  if (s.length() < 2) return s;
+  if (s[0] == '\\' && s[1] == 'x') {
+    if (s.length() % 2 != 0) {
+      fprintf(stderr, "invalid hex string\n");
+      return "";
+    }
+    string res = "";
+    for (size_t i = 2; i < s.length();) {
+      char hi = s[i];
+      char lo = s[i+1];
+      char c = ((hexDigitToNum(hi) << 4) + hexDigitToNum(lo));
+      res += c;
+      i += 2;
+    }
+    return res;
+  }
+  return s;
+}
 
 /// gettok - Return the next token from standard input.
 int gettok(std::function<char()> getch) {
@@ -88,7 +118,7 @@ int gettok(std::function<char()> getch) {
       lastCh = getch();
     }
     lastCh = getch(); // eat the closing "
-    StrVal = lit;
+    StrVal = ConvertHexString(lit);
     return tok_str_literal;
   }
   
@@ -112,3 +142,4 @@ int gettok(std::function<char()> getch) {
   lastCh = getch();
   return thisCh;
 }
+
