@@ -56,6 +56,14 @@ static std::unique_ptr<ExprAST> ParseNumberExpr(bool fp) {
   return std::move(res);
 }
 
+static std::unique_ptr<ExprAST> ParseStringLiteral() {
+  fprintf(stderr, "!!! parser found str literal: %s\n", StrVal.c_str());
+  auto res = std::make_unique<NumberExprAST>(); 
+  *res = NumberExprAST::FromStr(StrVal);
+  getNextToken(); // eat the literal
+  return std::move(res);
+}
+
 static std::unique_ptr<ExprAST> ParseExpression();
 static std::unique_ptr<StatementAST> ParseStmt();
 
@@ -289,6 +297,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseNumberExpr(true /* fp */);
   case tok_int_literal:
     return ParseNumberExpr(false /* fp */);
+  case tok_str_literal:
+    return ParseStringLiteral();
   case '(':
     return ParseParenExpr();
   }

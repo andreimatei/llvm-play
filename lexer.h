@@ -14,6 +14,7 @@ enum Token {
   tok_identifier = -4,
   tok_int_literal = -5,
   tok_fp_literal = -16,
+  tok_str_literal = -17,
   tok_block_open = -11,
   tok_block_close = -12,
   tok_semi = -13,
@@ -37,5 +38,6 @@ int gettok();
 extern std::string IdentifierStr; // Filled in if tok_identifier
 extern long int IntVal;           // Filled in if tok_int_literal
 extern double FPVal;              // Filled in if tok_fp_literal
+extern std::string StrVal;        // Filled in if tok_str_literal
 
 #endif

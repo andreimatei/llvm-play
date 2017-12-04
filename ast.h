@@ -42,29 +42,43 @@ public:
 /// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
 public:
-  // NumberExprAST(double val): val(val){}
+  NumberExprAST() {}
+
   static NumberExprAST FromFP(double val) {
     NumberExprAST n;
     n.isFP = true;
+    n.isInt = false;
+    n.isStr = false;
     n.dval = val;
-    n.ival = 0;
     return n;
   }
   static NumberExprAST FromInt(long int val) {
     NumberExprAST n;
+    n.isInt = true;
     n.isFP = false;
-    n.dval = 0;
+    n.isStr = false;
     n.ival = val;
+    return n;
+  }
+  static NumberExprAST FromStr(const std::string& str) {
+    NumberExprAST n;
+    n.isStr = true;
+    n.isFP = false;
+    n.isInt = false;
+    n.sval = str;
     return n;
   }
   virtual llvm::Value* codegenExpr();
   virtual string print();
 
   bool isFP;
+  bool isStr;
+  bool isInt;
 
 private:
   double dval;
   int ival;
+  std::string sval;
 };
 
 // Variable references.

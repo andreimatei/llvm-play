@@ -121,11 +121,37 @@ static llvm::AllocaInst* createEntryBlockAlloca(
 }
 
 Value* NumberExprAST::codegenExpr() {
+  fprintf(stderr, "!!! NumberExprAST::codegen: %d %d %d\n", isFP, isInt, isStr);
   if (isFP) {
     return llvm::ConstantFP::get(TheContext, llvm::APFloat(dval));
-  } else {
+  } else if (isInt) {
     return llvm::Constant::getIntegerValue(Type::getInt8Ty(TheContext), 
         llvm::APInt(8, ival, false /* signed */));
+  } else {
+    llvm::Constant* constArr = llvm::ConstantDataArray::getString(
+        TheContext, sval, true /* AddNull */);
+    llvm::ArrayType* arrayTy = llvm::ArrayType::get(
+        Type::getInt8Ty(TheContext), sval.length() + 1);
+    llvm::GlobalVariable* gvarArrayStr = new llvm::GlobalVariable(
+      *TheModule,
+      arrayTy,
+      /*isConstant=*/true,
+      /*Linkage=*/llvm::GlobalValue::PrivateLinkage,
+      /*Initializer=*/0, // has initializer, specified below
+      /*Name=*/".str");
+      gvarArrayStr->setAlignment(1);
+    gvarArrayStr->setInitializer(constArr);
+      
+    
+     std::vector<llvm::Constant*> idxs;
+     llvm::ConstantInt* idx0 = llvm::ConstantInt::get(
+         TheContext, llvm::APInt(32, 0));
+     idxs.push_back(idx0);
+     idxs.push_back(idx0);
+     llvm::Constant* startPtr = llvm::ConstantExpr::getGetElementPtr(
+         arrayTy,
+         gvarArrayStr, idxs);
+     return startPtr;
   }
 }
 

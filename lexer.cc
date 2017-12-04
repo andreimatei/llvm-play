@@ -5,6 +5,7 @@
 std::string IdentifierStr; // Filled in if tok_identifier
 long int IntVal;           // Filled in if tok_int_literal
 double FPVal;              // Filled in if tok_fp_literal
+std::string StrVal;        // Filled in if tok_str_literal
 
 /// gettok - Return the next token from standard input.
 int gettok() {
@@ -76,6 +77,20 @@ int gettok() {
       IntVal = strtol(num.c_str(), nullptr /* endptr */, 10 /* base */);
       return tok_int_literal;
     }
+  }
+
+  // parse a string literal
+  if (lastCh == '"') {
+    fprintf(stderr, "!!! lexer found str literal\n");
+    lastCh = getchar();
+    std::string lit;
+    while (lastCh != '"') {
+      lit += lastCh;
+      lastCh = getchar();
+    }
+    lastCh = getchar(); // eat the closing "
+    StrVal = lit;
+    return tok_str_literal;
   }
   
   if (lastCh == '#') {

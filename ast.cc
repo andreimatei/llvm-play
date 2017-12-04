@@ -7,8 +7,10 @@ std::string NumberExprAST::print() {
   std::ostringstream s;
   if (isFP) {
     s << dval;
-  } else {
+  } else if (isInt) {
     s << ival;
+  } else {
+    s << sval;
   }
   return s.str();
 }
