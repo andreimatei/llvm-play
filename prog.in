@@ -1,0 +1,11 @@
+extern byte strcmp(byte_ptr s1, byte_ptr s2);
+
+def byte f() {
+  var xp byte_ptr = "xbcaa"; 
+  var yp byte_ptr = "xbcbb"; 
+  return strcmp(xp, yp);
+};
+
+def byte prog_main() {
+  return f();
+}

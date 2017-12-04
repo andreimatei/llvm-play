@@ -1,3 +1,7 @@
+#include <string>
+#include <fstream>
+#include <streambuf>
+
 #include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -9,6 +13,8 @@
 #include "parser.h"
 #include "global.h"
 #include "kaleidoscpe_jit.h"
+
+using std::string;
 
 void InitLLVM() {
   llvm::InitializeNativeTarget();
@@ -44,7 +50,62 @@ void ResetModule() {
   TheFPM->doInitialization();
 }
 
+class StringReader {
+private:
+  string prog;
+  size_t idx;
+public:
+  StringReader(const string& prog) : prog(prog), idx(0) {}
+  ~StringReader() {}
+
+  char GetNextChar() {
+    if (idx < prog.length()) {
+      return prog[idx++];
+    }
+    return EOF;
+  }
+};
+
+StringReader* SR;
+
+void CompileStr(const std::string& prog) {
+  // TODO(andrei): sr leaks
+  SR = new StringReader(prog);
+  //auto sr = new StringReader(prog);
+  std::function<char()> nextCh = []() {
+    return SR->GetNextChar();
+  };
+  GetNextChar = nextCh;
+}
+
+string FileToString(const string& path) {
+  std::ifstream t(path);
+  string str((std::istreambuf_iterator<char>(t)),
+              std::istreambuf_iterator<char>());
+  fprintf(stderr, "program: %s\n", str.c_str());
+  return str;
+}
+
+void RunProgMain() {
+  llvm::JITSymbol exprSymbol = TheJIT->findSymbol("prog_main");
+  assert(exprSymbol && "Function not found");
+
+  // Get the symbol's address and cast it to the right type (takes no
+  // arguments, returns a double) so we can call it as a native function.
+  // !!! double (*fp)() = (double (*)())(intptr_t)(*exprSymbol.getAddress());
+  // double res = fp();
+  // fprintf(stderr, "Evaluated to: %f\n", res);
+  char (*fp)() = (char(*)())(intptr_t)(*exprSymbol.getAddress());
+  char res = fp();
+  fprintf(stderr, "Evaluated to: %d\n", int(res));
+}
+
 int main() {
+  GetNextChar = &getchar;
+
+  string progStr = FileToString("prog.in");
+  CompileStr(progStr);
+
   InitParser();
   InitLLVM();
   
@@ -52,6 +113,8 @@ int main() {
 
   // Print out all of the generated code.
   TheModule->print(llvm::errs(), nullptr);
+
+  RunProgMain();
 
   return 0;
 }

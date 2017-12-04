@@ -7,6 +7,8 @@ void InitParser();
 void MainLoop();
 llvm::Value* logErrorV(const char* str);
 
+extern std::function<char()> GetNextChar;
+
 enum VarType {
   type_double = 0,
   type_byte = 1,

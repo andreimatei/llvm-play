@@ -8,19 +8,19 @@ double FPVal;              // Filled in if tok_fp_literal
 std::string StrVal;        // Filled in if tok_str_literal
 
 /// gettok - Return the next token from standard input.
-int gettok() {
+int gettok(std::function<char()> getch) {
   // static because a previous call may leave a character not consumed.
   static int lastCh = ' ';
 
   // Skip white space.
   while (isspace(lastCh)) {
-    lastCh = getchar();
+    lastCh = getch();
   }
 
   if (isalpha(lastCh) || (lastCh == '_')) {  // identifier: [a-zA-Z][a-zA-Z0-9]_*
     IdentifierStr = lastCh;
 
-    while (isalnum(lastCh = getchar()) || (lastCh == '_')) {
+    while (isalnum(lastCh = getch()) || (lastCh == '_')) {
       IdentifierStr += lastCh;
     }
     if (IdentifierStr == "def") {
@@ -48,15 +48,15 @@ int gettok() {
   }
 
   if (lastCh == '{') {
-    lastCh = getchar();
+    lastCh = getch();
     return tok_block_open;
   }
   if (lastCh == '}') {
-    lastCh = getchar();
+    lastCh = getch();
     return tok_block_close;
   }
   if (lastCh == ';') {
-    lastCh = getchar();
+    lastCh = getch();
     return tok_semi;
   }
 
@@ -65,7 +65,7 @@ int gettok() {
     std::string num;
     do {
       num += lastCh;
-      lastCh = getchar();
+      lastCh = getch();
       if (lastCh == '.') {
         found_dec = true;
       }
@@ -81,13 +81,13 @@ int gettok() {
 
   // parse a string literal
   if (lastCh == '"') {
-    lastCh = getchar();
+    lastCh = getch();
     std::string lit;
     while (lastCh != '"') {
       lit += lastCh;
-      lastCh = getchar();
+      lastCh = getch();
     }
-    lastCh = getchar(); // eat the closing "
+    lastCh = getch(); // eat the closing "
     StrVal = lit;
     return tok_str_literal;
   }
@@ -95,10 +95,10 @@ int gettok() {
   if (lastCh == '#') {
     // Comment until end of line.
     do {
-      lastCh = getchar();
+      lastCh = getch();
     } while (lastCh != EOF && lastCh != '\n' && lastCh != '\r');
     if (lastCh != EOF) {
-      return gettok();
+      return gettok(getch);
     }
   }
   
@@ -109,6 +109,6 @@ int gettok() {
 
   // Otherwise, just return the character as its ascii value.
   int thisCh = lastCh;
-  lastCh = getchar();
+  lastCh = getch();
   return thisCh;
 }
