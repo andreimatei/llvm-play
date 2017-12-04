@@ -363,7 +363,6 @@ void InitParser() {
   // Install standard binary operators.
   // 1 is lowest precedence.
   BinopPrecedence['='] = 2;
-  BinopPrecedence['!'] = 10;
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;

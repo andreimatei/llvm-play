@@ -1,3 +1,6 @@
+#ifndef GLOBAL_H 
+#define GLOBAL_H
+
 #include <memory>
 
 #include "llvm/IR/Module.h"
@@ -14,3 +17,5 @@ extern std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 extern std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 
 void ResetModule();
+
+#endif

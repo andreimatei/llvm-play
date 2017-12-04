@@ -14,22 +14,18 @@ extern "C" DLLEXPORT double putchard(double x) {
 }
 
 extern "C" char* skip_checksum(char *s) {
-  fprintf(stderr, "skipChecksum called with %p\n", s);
   return s+4;
 }
 
 extern "C" char* skip_bytes(char *s, char numBytes) {
-  fprintf(stderr, "skipBytes called with %p\n", s);
   return s+numBytes;
 }
 
 extern "C" char* skip_byte(char *s) {
-  fprintf(stderr, "skipByte called with %p\n", s);
   return s+1;
 }
 
 extern "C" char* skip_int(char *s) {
-  char* origS = s;
   while (true) {
     if (*s & 128) {
       s++;
@@ -37,7 +33,6 @@ extern "C" char* skip_int(char *s) {
     }
     break;
   }
-  fprintf(stderr, "skipped int: %ld bytes\n", (s +1 - origS));
   return ++s;
 }
 
